@@ -466,17 +466,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gadgetdeck-cli"
-version = "0.1.0"
-dependencies = [
- "ctrlc",
- "env_logger",
- "gadgetdeck",
- "log",
- "usb-gadget",
-]
-
-[[package]]
 name = "gadgetdeck-display"
 version = "0.1.0"
 dependencies = [

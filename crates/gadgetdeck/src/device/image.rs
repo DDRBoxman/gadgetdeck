@@ -71,6 +71,19 @@ pub enum ImageEvent {
         /// The completed image
         image: ButtonImage,
     },
+    /// An image was updated for the LCD touchscreen (Plus only)
+    LcdUpdated {
+        /// X offset from left (0, 200, 400, or 600 for segments A-D)
+        x_offset: u16,
+        /// Y offset from top (for partial updates)
+        y_offset: u16,
+        /// Image width (200 for segment, 800 for full)
+        width: u16,
+        /// Image height (100 or less for partial)
+        height: u16,
+        /// The completed image
+        image: ButtonImage,
+    },
 }
 
 /// Receiver for image events
@@ -103,10 +116,12 @@ impl ImageEventReceiver {
 pub enum ImageCommand {
     /// Write image data to a button - Mini uses 0x01
     WriteImage,
-    /// Update key image - MK2/XL uses 0x07
+    /// Update key image - MK2/XL/Plus uses 0x07
     UpdateKeyImage,
     /// Update full screen - MK2/XL uses 0x08
     UpdateFullScreen,
+    /// Update LCD screen - Plus uses 0x0C for touchscreen strip
+    UpdateLcdScreen,
     /// Unknown command
     Unknown(u8),
 }
@@ -118,6 +133,7 @@ impl ImageCommand {
             ImageCommand::WriteImage => 0x01,
             ImageCommand::UpdateKeyImage => 0x07,
             ImageCommand::UpdateFullScreen => 0x08,
+            ImageCommand::UpdateLcdScreen => 0x0C,
             ImageCommand::Unknown(v) => *v,
         }
     }
@@ -129,6 +145,7 @@ impl From<u8> for ImageCommand {
             0x01 => ImageCommand::WriteImage,
             0x07 => ImageCommand::UpdateKeyImage,
             0x08 => ImageCommand::UpdateFullScreen,
+            0x0C => ImageCommand::UpdateLcdScreen,
             other => ImageCommand::Unknown(other),
         }
     }
@@ -141,6 +158,8 @@ pub enum ImageProtocol {
     Module6,
     /// Module 15/32 (MK2/XL) protocol - 8-byte header
     Module15_32,
+    /// Plus LCD protocol - 16-byte header for touchscreen
+    PlusLcd,
 }
 
 /// Parsed image packet header (unified for all protocols)
@@ -162,6 +181,14 @@ pub struct ImagePacketHeader {
     pub protocol: ImageProtocol,
     /// Header size for this protocol
     pub header_size: usize,
+    /// LCD X offset (Plus LCD only, 0/200/400/600 for segments A-D)
+    pub lcd_x_offset: u16,
+    /// LCD Y offset (Plus LCD only, for partial updates)
+    pub lcd_y_offset: u16,
+    /// LCD image width (Plus LCD only, 200 for segment, 800 for full)
+    pub lcd_width: u16,
+    /// LCD image height (Plus LCD only, always 100)
+    pub lcd_height: u16,
 }
 
 impl ImagePacketHeader {
@@ -169,6 +196,8 @@ impl ImagePacketHeader {
     pub const SIZE_MINI: usize = 16;
     /// Header size for MK2/XL (Module 15/32)
     pub const SIZE_MK2_XL: usize = 8;
+    /// Header size for Plus LCD
+    pub const SIZE_PLUS_LCD: usize = 16;
 
     /// Parse a header from raw bytes, auto-detecting protocol from command
     pub fn parse(data: &[u8]) -> Option<Self> {
@@ -195,6 +224,10 @@ impl ImagePacketHeader {
                     chunk_size: (data.len() - Self::SIZE_MINI) as u16,
                     protocol: ImageProtocol::Module6,
                     header_size: Self::SIZE_MINI,
+                    lcd_x_offset: 0,
+                    lcd_y_offset: 0,
+                    lcd_width: 0,
+                    lcd_height: 0,
                 })
             }
             ImageCommand::UpdateKeyImage | ImageCommand::UpdateFullScreen => {
@@ -219,6 +252,66 @@ impl ImagePacketHeader {
                     chunk_size,
                     protocol: ImageProtocol::Module15_32,
                     header_size: Self::SIZE_MK2_XL,
+                    lcd_x_offset: 0,
+                    lcd_y_offset: 0,
+                    lcd_width: 0,
+                    lcd_height: 0,
+                })
+            }
+            ImageCommand::UpdateLcdScreen => {
+                // Plus LCD protocol - 16 byte header
+                // [0] Report ID (0x02)
+                // [1] Command (0x0C)
+                // [2-3] X offset from left (u16 LE): 0=seg A, 200=seg B, 400=seg C, 600=seg D
+                // [4-5] Y offset from top (u16 LE): for partial updates within the strip
+                // [6-7] Image width (u16 LE): 200 (segment) or 800 (full)
+                // [8-9] Image height (u16 LE): 100 or less for partial
+                // [10] Final chunk flag: 0x00 = more, 0x01 = last
+                // [11-12] Chunk index (u16 LE, zero-based)
+                // [13-14] Payload length (u16 LE)
+                // [15] Always 0x00
+                if data.len() < Self::SIZE_PLUS_LCD {
+                    return None;
+                }
+                let lcd_x_offset = u16::from_le_bytes([data[2], data[3]]);
+                let lcd_y_offset = u16::from_le_bytes([data[4], data[5]]);
+                let lcd_width = u16::from_le_bytes([data[6], data[7]]);
+                let lcd_height = u16::from_le_bytes([data[8], data[9]]);
+                let is_last = data[10] != 0;
+                let page_number = u16::from_le_bytes([data[11], data[12]]);
+                let chunk_size = u16::from_le_bytes([data[13], data[14]]);
+                
+                // Use key_index 128+ for LCD segments to avoid conflict with button indices (0-31)
+                // Full screen (800 wide) uses 255, segments use 128 + unique ID based on position
+                // We include y_offset in the key to handle overlapping x regions with different y positions
+                let key_index = if lcd_width == 800 && lcd_height == 100 { 
+                    255 
+                } else { 
+                    // Create unique key: 128 + segment (0-3) + (y_offset / 25) * 4
+                    // This allows up to 4 y-bands per x-segment
+                    let seg = (lcd_x_offset / 200) as u8;
+                    let y_band = ((lcd_y_offset / 25) as u8).min(3);
+                    128 + seg + y_band * 4
+                };
+                
+                log::debug!(
+                    "LCD packet: x_off={}, y_off={}, w={}, h={}, final={}, chunk={}, len={}, key_idx={}",
+                    lcd_x_offset, lcd_y_offset, lcd_width, lcd_height, is_last, page_number, chunk_size, key_index
+                );
+                
+                Some(Self {
+                    report_id,
+                    command,
+                    page_number,
+                    is_last,
+                    key_index,
+                    chunk_size,
+                    protocol: ImageProtocol::PlusLcd,
+                    header_size: Self::SIZE_PLUS_LCD,
+                    lcd_x_offset,
+                    lcd_y_offset,
+                    lcd_width,
+                    lcd_height,
                 })
             }
             ImageCommand::Unknown(_) => {
@@ -245,11 +338,11 @@ impl ImagePacket {
         
         // Extract payload based on detected header size
         let payload = if data.len() > header.header_size {
-            // For MK2/XL, only take chunk_size bytes of payload
+            // For MK2/XL and Plus LCD, only take chunk_size bytes of payload
             let payload_start = header.header_size;
             let payload_end = match header.protocol {
                 ImageProtocol::Module6 => data.len(),
-                ImageProtocol::Module15_32 => {
+                ImageProtocol::Module15_32 | ImageProtocol::PlusLcd => {
                     // Use the chunk_size field, but don't exceed available data
                     (payload_start + header.chunk_size as usize).min(data.len())
                 }
@@ -274,6 +367,16 @@ struct ImageBuilder {
     next_page: u16,
     /// Whether the image is complete
     complete: bool,
+    /// Protocol type (for LCD vs button distinction)
+    protocol: Option<ImageProtocol>,
+    /// LCD X offset (for Plus LCD only)
+    lcd_x_offset: u16,
+    /// LCD Y offset (for Plus LCD only)
+    lcd_y_offset: u16,
+    /// LCD width (for Plus LCD only)
+    lcd_width: u16,
+    /// LCD height (for Plus LCD only)
+    lcd_height: u16,
 }
 
 impl ImageBuilder {
@@ -283,6 +386,11 @@ impl ImageBuilder {
             data: Vec::with_capacity(96 * 96 * 3), // Max JPEG estimate for XL (96x96)
             next_page: 0,
             complete: false,
+            protocol: None,
+            lcd_x_offset: 0,
+            lcd_y_offset: 0,
+            lcd_width: 0,
+            lcd_height: 0,
         }
     }
 
@@ -305,6 +413,15 @@ impl ImageBuilder {
             });
         }
 
+        // Store protocol and LCD metadata from first packet
+        if self.next_page == 0 {
+            self.protocol = Some(packet.header.protocol);
+            self.lcd_x_offset = packet.header.lcd_x_offset;
+            self.lcd_y_offset = packet.header.lcd_y_offset;
+            self.lcd_width = packet.header.lcd_width;
+            self.lcd_height = packet.header.lcd_height;
+        }
+
         // Append payload
         self.data.extend_from_slice(&packet.payload);
         self.next_page += 1;
@@ -322,6 +439,11 @@ impl ImageBuilder {
         self.data.clear();
         self.next_page = 0;
         self.complete = false;
+        self.protocol = None;
+        self.lcd_x_offset = 0;
+        self.lcd_y_offset = 0;
+        self.lcd_width = 0;
+        self.lcd_height = 0;
     }
 }
 
@@ -384,6 +506,56 @@ impl ButtonImage {
     /// Check if the image is empty
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+    
+    /// Validate the image data and log debug information
+    /// 
+    /// Returns true if the image appears valid (has proper magic bytes)
+    pub fn validate(&self) -> bool {
+        if self.data.len() < 2 {
+            log::warn!("Button {} image too short: {} bytes", self.key_index, self.data.len());
+            return false;
+        }
+        
+        // Check for JPEG magic bytes
+        if self.data[0] == 0xFF && self.data[1] == 0xD8 {
+            // Look for JPEG EOI marker (should be last 2 bytes)
+            let len = self.data.len();
+            if len >= 2 {
+                let last_two = &self.data[len-2..];
+                if last_two[0] != 0xFF || last_two[1] != 0xD9 {
+                    log::warn!(
+                        "Button {} JPEG missing EOI marker: last 2 bytes are {:02X} {:02X} (expected FF D9)",
+                        self.key_index, last_two[0], last_two[1]
+                    );
+                    // Try to find the real EOI marker
+                    for i in (0..len-1).rev() {
+                        if self.data[i] == 0xFF && self.data[i+1] == 0xD9 {
+                            log::warn!(
+                                "Button {} found EOI at offset {}, image has {} extra bytes after EOI",
+                                self.key_index, i, len - i - 2
+                            );
+                            break;
+                        }
+                    }
+                    return false;
+                }
+            }
+            log::debug!("Button {} JPEG valid: {} bytes", self.key_index, self.data.len());
+            return true;
+        }
+        
+        // Check for BMP magic bytes
+        if self.data[0] == b'B' && self.data[1] == b'M' {
+            log::debug!("Button {} BMP valid: {} bytes", self.key_index, self.data.len());
+            return true;
+        }
+        
+        log::warn!(
+            "Button {} unknown format: first bytes {:02X} {:02X}",
+            self.key_index, self.data[0], self.data[1]
+        );
+        false
     }
 
     /// Save the image to a file for debugging
@@ -521,29 +693,88 @@ impl ImageStore {
                     
                     // Image is complete, store it
                     // key_index is already 0-based (converted in header parsing)
+                    let mut data = std::mem::take(&mut builder.data);
+                    
+                    // For JPEG images, trim any data after the EOI marker
+                    // This can happen if chunk_size includes padding bytes
+                    if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
+                        // Find the EOI marker (FF D9)
+                        for i in (2..data.len().saturating_sub(1)).rev() {
+                            if data[i] == 0xFF && data[i+1] == 0xD9 {
+                                let valid_len = i + 2;
+                                if valid_len < data.len() {
+                                    log::debug!(
+                                        "Button {} trimming {} bytes after JPEG EOI",
+                                        key_index, data.len() - valid_len
+                                    );
+                                    data.truncate(valid_len);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
                     let image = ButtonImage {
                         key_index,
-                        data: std::mem::take(&mut builder.data),
+                        data,
                         received_at: std::time::Instant::now(),
                     };
                     
-                    let image_size = image.len();
+                    // Validate the image data and log header bytes for debugging
+                    let header_hex: String = image.data.iter().take(16)
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let tail_hex: String = image.data.iter().rev().take(16).rev()
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    log::info!(
+                        "Button {} image: {} bytes, head=[{}], tail=[{}]",
+                        key_index, image.data.len(), header_hex, tail_hex
+                    );
                     
-                    // Notify subscribers (remove any that have been dropped)
-                    let event = ImageEvent::Updated {
-                        key_index,
-                        image: image.clone(),
+                    image.validate();
+                    
+                    let image_size = image.len();
+                    let is_lcd = builder.protocol == Some(ImageProtocol::PlusLcd);
+                    let lcd_x_offset = builder.lcd_x_offset;
+                    let lcd_y_offset = builder.lcd_y_offset;
+                    let lcd_width = builder.lcd_width;
+                    let lcd_height = builder.lcd_height;
+                    
+                    // Notify subscribers with appropriate event type
+                    let event = if is_lcd {
+                        ImageEvent::LcdUpdated {
+                            x_offset: lcd_x_offset,
+                            y_offset: lcd_y_offset,
+                            width: lcd_width,
+                            height: lcd_height,
+                            image: image.clone(),
+                        }
+                    } else {
+                        ImageEvent::Updated {
+                            key_index,
+                            image: image.clone(),
+                        }
                     };
                     inner.subscribers.retain(|tx| tx.send(event.clone()).is_ok());
                     
                     inner.images.insert(key_index, image);
                     inner.stats.images_completed += 1;
                     
-                    log::info!(
-                        "Image complete for button {}: {} bytes",
-                        key_index,
-                        image_size
-                    );
+                    if is_lcd {
+                        log::info!(
+                            "LCD image complete: x_off={}, {}x{}, {} bytes",
+                            lcd_x_offset, lcd_width, lcd_height, image_size
+                        );
+                    } else {
+                        log::info!(
+                            "Image complete for button {}: {} bytes",
+                            key_index,
+                            image_size
+                        );
+                    }
                     
                     Ok(Some(key_index))
                 } else {

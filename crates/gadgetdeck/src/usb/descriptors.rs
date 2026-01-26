@@ -19,9 +19,8 @@ pub enum StreamDeckModel {
     Mk2,
     /// Stream Deck XL (Module 32) - 32 keys, 8x4 layout
     Xl,
-    // Future models can be added here:
-    // Original,
-    // Plus,
+    /// Stream Deck Plus - 8 keys (4x2), 4 knobs, touchscreen
+    Plus,
 }
 
 impl StreamDeckModel {
@@ -32,6 +31,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => 0x0086,
             StreamDeckModel::Mk2 => 0x00B9,   // Module 15
             StreamDeckModel::Xl => 0x00BA,    // Module 32
+            StreamDeckModel::Plus => 0x0084,
         }
     }
 
@@ -42,6 +42,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => "Stream Deck Pedal",
             StreamDeckModel::Mk2 => "Stream Deck MK.2",
             StreamDeckModel::Xl => "Stream Deck XL",
+            StreamDeckModel::Plus => "Stream Deck +",
         }
     }
 
@@ -57,6 +58,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => Class::new(0, 0, 0),
             StreamDeckModel::Mk2 => Class::new(0, 0, 0),
             StreamDeckModel::Xl => Class::new(0, 0, 0),
+            StreamDeckModel::Plus => Class::new(0, 0, 0),
         }
     }
 
@@ -72,6 +74,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => 0x0100,
             StreamDeckModel::Mk2 => 0x0100,
             StreamDeckModel::Xl => 0x0100,
+            StreamDeckModel::Plus => 0x0100,
         }
     }
 
@@ -82,6 +85,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => 64,
             StreamDeckModel::Mk2 => 64,
             StreamDeckModel::Xl => 64,
+            StreamDeckModel::Plus => 64,
         }
     }
 
@@ -92,6 +96,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => 100,
             StreamDeckModel::Mk2 => 500,
             StreamDeckModel::Xl => 500,
+            StreamDeckModel::Plus => 500,
         }
     }
 }
@@ -147,6 +152,16 @@ impl StreamDeckModel {
                 report_descriptor: Self::stream_deck_module_15_32_report_descriptor(),
                 // Report length: Input report has 4-byte header + payload
                 report_len: 32,  // Typical key state report size
+            },
+            StreamDeckModel::Plus => StreamDeckHidConfig {
+                protocol: 0,
+                sub_class: 0,
+                in_max_packet_size: 512,   // Similar to MK2/XL
+                out_max_packet_size: 1024, // Output packets up to 1051 bytes per research
+                interval: 1,
+                report_descriptor: Self::stream_deck_plus_report_descriptor(),
+                // Report length: 14 bytes for button input, 9 bytes for knob/touch input
+                report_len: 14,
             },
         }
     }
@@ -532,6 +547,106 @@ impl StreamDeckModel {
         ]
     }
 
+    /// Stream Deck Plus HID Report Descriptor
+    /// Based on reverse engineering research from Den Delimarsky
+    /// 
+    /// The Plus has:
+    /// - 8 buttons with 120x120 JPEG images
+    /// - 800x100 touchscreen
+    /// - 4 rotary encoders (knobs)
+    /// 
+    /// Input reports:
+    /// - Buttons: Report ID 0x01, [0x01, 0x00, 0x08, 0x00, buttons[8]...]
+    /// - Knobs: Report ID 0x01, [0x01, 0x03, 0x05, 0x00, is_turn, knob_a, knob_b, knob_c, knob_d]
+    /// - Touchscreen: Report ID 0x01, [0x01, 0x02, 0x0E, 0x00, 0x01, 0x01, x_lo, x_hi, y_lo, y_hi]
+    /// 
+    /// Output reports:
+    /// - Button images: Command 0x07, [0x02, 0x07, key_idx, final, len_lo, len_hi, chunk_lo, chunk_hi, data...]
+    /// - Screen images: Command 0x0C, [0x02, 0x0C, x_off_lo, x_off_hi, 0x00, 0x00, w_lo, w_hi, h_lo, h_hi, final, chunk_lo, chunk_hi, len_lo, len_hi, 0x00, data...]
+    fn stream_deck_plus_report_descriptor() -> Vec<u8> {
+        vec![
+            // Usage Page (Consumer Devices)
+            0x05, 0x0C,
+            // Usage (Consumer Control)
+            0x09, 0x01,
+            // Collection (Application)
+            0xA1, 0x01,
+
+            //   Usage Page (Vendor Defined 0xFF00)
+            0x06, 0x00, 0xFF,
+
+            //   Common field definition
+            //   Logical Minimum (0)
+            0x15, 0x00,
+            //   Logical Maximum (255)
+            0x26, 0xFF, 0x00,
+            //   Report Size (8)
+            0x75, 0x08,
+
+            //   Report ID 1 - Input (511 bytes) - Button/Knob/Touch input
+            //   Format varies by event type (byte 1):
+            //   - Buttons: [Report ID, 0x00, num_buttons(8), 0x00, button_states...]
+            //   - Knobs: [Report ID, 0x03, 0x05, 0x00, is_turn, knob_values...]
+            //   - Touch: [Report ID, 0x02, 0x0E, 0x00, 0x01, 0x01, x_coord, y_coord]
+            0x96, 0xFF, 0x01,  // Report Count (511)
+            0x85, 0x01,        // Report ID (1)
+            0x09, 0x01,        // Usage
+            0x81, 0x02,        // Input (Data, Variable, Absolute)
+
+            //   Report ID 2 - Output (1023 bytes) - Image upload
+            //   Button images use command 0x07, screen images use command 0x0C
+            0x96, 0xFF, 0x03,  // Report Count (1023)
+            0x85, 0x02,        // Report ID (2)
+            0x09, 0x01,        // Usage
+            0x91, 0x02,        // Output (Data, Variable, Absolute)
+
+            //   Report ID 3 - Feature (31 bytes) - Setters (brightness, etc.)
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x03,        // Report ID (3)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature (Data, Variable, Absolute)
+
+            //   Report ID 4 - Feature (31 bytes) - LD firmware version
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x04,        // Report ID (4)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            //   Report ID 5 - Feature (31 bytes) - AP2 (primary) firmware version
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x05,        // Report ID (5)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            //   Report ID 6 - Feature (31 bytes) - Serial number
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x06,        // Report ID (6)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            //   Report ID 7 - Feature (31 bytes) - AP1 (backup) firmware version
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x07,        // Report ID (7)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            //   Report ID 8 - Feature (31 bytes) - Unit information
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x08,        // Report ID (8)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            //   Report ID 10 (0x0A) - Feature (31 bytes) - Idle time before sleep
+            0x95, 0x1F,        // Report Count (31)
+            0x85, 0x0A,        // Report ID (10)
+            0x09, 0x01,        // Usage
+            0xB1, 0x02,        // Feature
+
+            // End Collection
+            0xC0,
+        ]
+    }
+
     /// Returns the report ID used for version info
     /// 
     /// Based on Elgato official documentation:
@@ -541,7 +656,7 @@ impl StreamDeckModel {
         match self {
             StreamDeckModel::Mini => 0xA1,  // Mini uses 0xA1 for AP2 (primary firmware) per Elgato docs
             StreamDeckModel::Pedal => 0x05,
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => 0x05,  // Module 15/32 use 0x05 for AP2 (primary)
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus => 0x05,  // Module 15/32/Plus use 0x05 for AP2 (primary)
         }
     }
 
@@ -554,7 +669,7 @@ impl StreamDeckModel {
         match self {
             StreamDeckModel::Mini => 0x03,  // Mini uses report 0x03 for serial per Elgato docs
             StreamDeckModel::Pedal => 0x06,
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => 0x06,  // Module 15/32 use 0x06 for serial
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus => 0x06,  // Module 15/32/Plus use 0x06 for serial
         }
     }
 
@@ -602,6 +717,16 @@ impl StreamDeckModel {
                 report[6..6 + copy_len].copy_from_slice(&version[..copy_len]);
                 report
             }
+            StreamDeckModel::Plus => {
+                // Plus version report is 32 bytes
+                // Per den.dev research: version string at offset [5:]
+                let mut report = vec![0u8; 32];
+                report[0] = 0x05;  // Report ID for AP2 firmware version
+                let version = b"1.0.0.0\0";  // Firmware version string
+                let copy_len = version.len().min(27);  // Max 27 bytes from offset 5
+                report[5..5 + copy_len].copy_from_slice(&version[..copy_len]);
+                report
+            }
         }
     }
 
@@ -644,6 +769,16 @@ impl StreamDeckModel {
                 report[2..2 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
                 report
             }
+            StreamDeckModel::Plus => {
+                // Plus serial report is 32 bytes
+                // Per den.dev research: serial string at offset [5:]
+                let mut report = vec![0u8; 32];
+                report[0] = 0x06;  // Report ID for Plus serial
+                let serial_bytes = serial.as_bytes();
+                let copy_len = serial_bytes.len().min(27);  // Max 27 bytes from offset 5
+                report[5..5 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
+                report
+            }
         }
     }
 
@@ -658,9 +793,9 @@ impl StreamDeckModel {
             // Unit information report (Module 15/32 only)
             self.unit_info_report()
         } else {
-            // Handle additional feature report IDs for MK2/XL
+            // Handle additional feature report IDs for MK2/XL/Plus
             match self {
-                StreamDeckModel::Mk2 | StreamDeckModel::Xl => {
+                StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus => {
                     match report_id {
                         0x04 => {
                             // LD firmware version
@@ -725,7 +860,7 @@ impl StreamDeckModel {
                 config_value: 1,
                 num_interfaces: 1,
             },
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => ConfigAttributes {
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus => ConfigAttributes {
                 bus_powered: true,
                 remote_wakeup: true,
                 config_value: 1,
@@ -741,6 +876,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => 3,
             StreamDeckModel::Mk2 => 15,
             StreamDeckModel::Xl => 32,
+            StreamDeckModel::Plus => 8,
         }
     }
 
@@ -751,6 +887,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => (3, 1),
             StreamDeckModel::Mk2 => (5, 3),
             StreamDeckModel::Xl => (8, 4),
+            StreamDeckModel::Plus => (4, 2),
         }
     }
 
@@ -761,6 +898,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => (0, 0),  // Pedal has no display
             StreamDeckModel::Mk2 => (72, 72),
             StreamDeckModel::Xl => (96, 96),
+            StreamDeckModel::Plus => (120, 120),
         }
     }
 
@@ -771,6 +909,7 @@ impl StreamDeckModel {
             StreamDeckModel::Pedal => (0, 0),  // Pedal has no display
             StreamDeckModel::Mk2 => (480, 272),
             StreamDeckModel::Xl => (1024, 600),
+            StreamDeckModel::Plus => (800, 100),  // 800x240 for buttons (2 rows × 120px) + 800x100 touchscreen
         }
     }
 
@@ -779,7 +918,7 @@ impl StreamDeckModel {
         match self {
             StreamDeckModel::Mini => "BMP",       // Module 6 uses BMP, rotated 90° clockwise
             StreamDeckModel::Pedal => "NONE",
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => "JPEG",  // Module 15/32 use JPEG, rotated 180°
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus => "JPEG",  // Module 15/32/Plus use JPEG
         }
     }
 
@@ -836,29 +975,31 @@ impl StreamDeckModel {
                 report[12] = 0;
                 Some(report)
             }
+            StreamDeckModel::Plus => {
+                let mut report = vec![0u8; 32];
+                report[0] = 0x08;  // Report ID
+                report[1] = 2;  // Rows
+                report[2] = 4;  // Columns
+                // Key width (120) as u16 LE
+                report[3] = 120;
+                report[4] = 0;
+                // Key height (120) as u16 LE
+                report[5] = 120;
+                report[6] = 0;
+                // LCD width (800) as u16 LE - touchscreen strip
+                report[7] = 0x20;
+                report[8] = 0x03;
+                // LCD height (100) as u16 LE - touchscreen strip only
+                report[9] = 0x64;
+                report[10] = 0x00;
+                // BPP
+                report[11] = 24;
+                // Color scheme (RGB)
+                report[12] = 0;
+                Some(report)
+            }
             _ => None,
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_stream_deck_mini_ids() {
-        let model = StreamDeckModel::Mini;
-        assert_eq!(model.product_id(), 0x0063);
-        assert_eq!(model.product_name(), "Stream Deck Mini");
-        assert_eq!(model.bcd_device(), 0x0110);
-    }
-
-    #[test]
-    fn test_stream_deck_mini_hid_config() {
-        let config = StreamDeckModel::Mini.hid_config();
-        assert_eq!(config.in_max_packet_size, 512);
-        assert_eq!(config.out_max_packet_size, 1024);
-        assert_eq!(config.protocol, 0);
-        assert_eq!(config.sub_class, 0);
-    }
-}

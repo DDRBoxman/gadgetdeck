@@ -98,6 +98,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Ignore send errors (no subscribers)
                     let _ = watch_tx.send(update);
                 }
+                Ok(ImageEvent::LcdUpdated { x_offset, y_offset, width, height, image }) => {
+                    // LCD updates for Stream Deck Plus touchscreen
+                    log::debug!(
+                        "LCD image update: x_off={}, y_off={}, {}x{}, {} bytes",
+                        x_offset, y_offset, width, height, image.len()
+                    );
+                    // TODO: Add WebSocket message for LCD updates if needed
+                }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // Check running flag and continue
                     continue;

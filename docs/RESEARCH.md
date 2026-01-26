@@ -8,15 +8,44 @@ This project emulates Elgato Stream Deck devices on a Raspberry Pi using the Lin
 
 ### USB Identification
 
+**Vendor ID**: `0x0fd9` (Elgato Systems GmbH)
+
+#### Complete Product ID List
+
+| Constant | Product ID | Model |
+|----------|------------|-------|
+| USB_PID_STREAMDECK_ORIGINAL | 0x0060 | Stream Deck Original |
+| USB_PID_STREAMDECK_MINI | 0x0063 | Stream Deck Mini |
+| USB_PID_STREAMDECK_XL | 0x006c | Stream Deck XL (Legacy) |
+| USB_PID_STREAMDECK_ORIGINAL_V2 | 0x006d | Stream Deck Original V2 |
+| USB_PID_STREAMDECK_MK2 | 0x0080 | Stream Deck MK.2 |
+| USB_PID_STREAMDECK_PLUS | 0x0084 | Stream Deck + |
+| USB_PID_STREAMDECK_PEDAL | 0x0086 | Stream Deck Pedal |
+| USB_PID_STREAMDECK_XL_V2 | 0x008f | Stream Deck XL V2 |
+| USB_PID_STREAMDECK_MINI_MK2 | 0x0090 | Stream Deck Mini MK.2 |
+| USB_PID_STREAMDECK_NEO | 0x009a | Stream Deck Neo |
+| USB_PID_STREAMDECK_MK2_SCISSOR | 0x00a5 | Stream Deck MK.2 (Scissor) |
+| USB_PID_STREAMDECK_STUDIO | 0x00aa | Stream Deck Studio |
+| USB_PID_STREAMDECK_MINI_MK2_MODULE | 0x00b8 | Stream Deck Mini MK.2 (Module) |
+| USB_PID_STREAMDECK_MK2_MODULE | 0x00b9 | Stream Deck MK.2 (Module 15) |
+| USB_PID_STREAMDECK_MK2_V2 | 0x00b9 | Stream Deck MK.2 V2 (same as Module) |
+| USB_PID_STREAMDECK_XL_V2_MODULE | 0x00ba | Stream Deck XL V2 (Module 32) |
+
+#### Device Capabilities Summary
+
 | Model | Vendor ID | Product ID | Keys | Layout | Notes |
 |-------|-----------|------------|------|--------|-------|
-| Stream Deck Mini (Module 6) | 0x0fd9 | 0x0063 | 6 | 3×2 | 80×80 BMP images |
-| Stream Deck Pedal | 0x0fd9 | 0x0086 | 3 | 3×1 | No display |
-| Stream Deck MK.2 (Module 15) | 0x0fd9 | 0x00B9 | 15 | 5×3 | 72×72 JPEG images |
-| Stream Deck XL (Module 32) | 0x0fd9 | 0x00BA | 32 | 8×4 | 96×96 JPEG images |
-| Stream Deck Original | 0x0fd9 | 0x0060 | 15 | 5×3 | Legacy |
+| Stream Deck Mini | 0x0fd9 | 0x0063 | 6 | 3×2 | 80×80 BMP images |
+| Stream Deck Mini MK.2 | 0x0fd9 | 0x0090 | 6 | 3×2 | 80×80 JPEG images |
+| Stream Deck Original | 0x0fd9 | 0x0060 | 15 | 5×3 | Legacy BMP |
 | Stream Deck Original V2 | 0x0fd9 | 0x006d | 15 | 5×3 | JPEG images |
+| Stream Deck MK.2 (Module 15) | 0x0fd9 | 0x00b9 | 15 | 5×3 | 72×72 JPEG images |
 | Stream Deck XL (Legacy) | 0x0fd9 | 0x006c | 32 | 8×4 | Legacy |
+| Stream Deck XL V2 (Module 32) | 0x0fd9 | 0x00ba | 32 | 8×4 | 96×96 JPEG images |
+| Stream Deck Pedal | 0x0fd9 | 0x0086 | 3 | 3×1 | No display |
+| Stream Deck Plus | 0x0fd9 | 0x0084 | 8 | 4×2 | 120×120 JPEG, 800×100 screen, 4 knobs |
+| Stream Deck Neo | 0x0fd9 | 0x009a | 8 | 4×2 | Touchscreen info bar |
+| Stream Deck Studio | 0x0fd9 | 0x00aa | 15 | 5×3 | Pro model with additional features |
 
 ### Device Capabilities (from Official Elgato Docs)
 
@@ -237,10 +266,246 @@ Data: 64 bytes, each byte is button state (0=released, 1=pressed)
 
 Polling: Recommended polling interval is 50ms. HID READ returns TIMEOUT if no state change.
 
+## Stream Deck Plus (Module 8)
+
+Sources:
+- [Reverse Engineering The Stream Deck Plus](https://den.dev/blog/reverse-engineer-stream-deck-plus/) by Den Delimarsky
+- [python-elgato-streamdeck](https://github.com/abcminiuser/python-elgato-streamdeck) StreamDeckPlus.py
+
+### Device Overview
+
+| Property | Value |
+|----------|-------|
+| Vendor ID | 0x0fd9 |
+| Product ID | 0x0084 |
+| KEY_COUNT | 8 |
+| KEY_COLS | 4 |
+| KEY_ROWS | 2 |
+| DIAL_COUNT | 4 |
+| KEY_PIXEL_WIDTH | 120 |
+| KEY_PIXEL_HEIGHT | 120 |
+| KEY_IMAGE_FORMAT | JPEG |
+| KEY_FLIP | (False, False) |
+| KEY_ROTATION | 0° |
+| TOUCHSCREEN_PIXEL_WIDTH | 800 |
+| TOUCHSCREEN_PIXEL_HEIGHT | 100 |
+| TOUCHSCREEN_IMAGE_FORMAT | JPEG |
+| TOUCHSCREEN_FLIP | (False, False) |
+| TOUCHSCREEN_ROTATION | 0° |
+| DECK_VISUAL | True |
+| DECK_TOUCH | True |
+
+### Packet Sizes
+
+| Constant | Value |
+|----------|-------|
+| _IMG_PACKET_LEN | 1024 bytes |
+| _KEY_PACKET_HEADER | 8 bytes |
+| _LCD_PACKET_HEADER | 16 bytes |
+| _KEY_PACKET_PAYLOAD_LEN | 1016 bytes (1024 - 8) |
+| _LCD_PACKET_PAYLOAD_LEN | 1008 bytes (1024 - 16) |
+
+### Features
+
+1. **8 Buttons** - Same behavior as other Stream Deck products, supports 120×120 color JPEG images
+2. **Narrow Screen** - 800×100 color touchscreen for auxiliary information
+3. **4 Dials/Knobs** - Each can turn right/left unlimited times and can be pressed (clicked)
+
+### Button Image Protocol
+
+Images are JPEG-encoded, sent via output reports. Packet header (8 bytes):
+
+```
++-------+----+----+----+----+----+----+----+----+
+| Byte  |  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |
++-------+----+----+----+----+----+----+----+----+
+| Value | 02 | 07 | ?? | ?? | ?? | ?? | ?? | ?? |
++-------+----+----+----+----+----+----+----+----+
+```
+
+| Byte | Description |
+|------|-------------|
+| 0 | Always `0x02` |
+| 1 | Always `0x07` |
+| 2 | Button index (zero-indexed, 0x00-0x07) |
+| 3 | Final packet flag: `0x00` = more data, `0x01` = last packet |
+| 4-5 | Payload length (u16 Little Endian) |
+| 6-7 | Chunk/page index (u16 Little Endian, zero-based) |
+
+Packets are 1,051 bytes total (8-byte header + up to 1,016 bytes payload, padded to 1,024).
+
+### Button Input Report Format
+
+Filter: `URB_INTERRUPT in` from device
+
+```
+[0x00] 0x01 - Report ID
+[0x01] 0x00
+[0x02] Number of buttons (0x08 for Plus)
+[0x03] 0x00
+[0x04+] Button states (8 bytes, one per button: 0x00=released, 0x01=pressed)
+```
+
+Example (button 4 pressed):
+```
+01 00 08 00 00 00 00 01 00 00 00 00 ...
+```
+
+### Screen Image Protocol
+
+Screen is 800×100 pixels. Can be set as full image or per-segment (200×100 each).
+
+#### Screen Header Format (16 bytes)
+
+```
++-------+----+----+-------+-------+-------+-------+-------+-------+----+-------+----+-------+-------+----+
+| Byte  |  0 |  1 |  2-3  |  4-5  |  6-7  |  8-9  | 10    | 11-12 | 13-14    | 15 |
++-------+----+----+-------+-------+-------+-------+-------+-------+----+-------+----+-------+-------+----+
+| Value | 02 | 0C | X off | 00 00 | Width | Height| Final | Chunk | Payload Len | 00 |
++-------+----+----+-------+-------+-------+-------+-------+-------+----+-------+----+-------+-------+----+
+```
+
+| Byte | Description |
+|------|-------------|
+| 0 | Always `0x02` |
+| 1 | Always `0x0C` |
+| 2-3 | X offset from left (u16 LE): 0=seg A, 200=seg B, 400=seg C, 600=seg D |
+| 4-5 | Always `0x00 0x00` |
+| 6-7 | Image width (u16 LE): `0xC8 0x00` = 200 (segment), `0x20 0x03` = 800 (full) |
+| 8-9 | Image height (u16 LE): `0x64 0x00` = 100 |
+| 10 | Final chunk flag: `0x00` = more, `0x01` = last |
+| 11-12 | Chunk index (u16 LE, zero-based) |
+| 13-14 | Payload length (u16 LE) |
+| 15 | Always `0x00` |
+
+#### Screen Segment Offsets
+
+| Segment | X Offset (hex) | X Offset (decimal) |
+|---------|----------------|--------------------|
+| A (leftmost) | `0x00 0x00` | 0 |
+| B | `0xC8 0x00` | 200 |
+| C | `0x90 0x01` | 400 |
+| D (rightmost) | `0x58 0x02` | 600 |
+
+### Touchscreen Input Report Format
+
+Filter: `URB_INTERRUPT in` from device
+
+The touchscreen input report is 14 bytes (read from device).
+
+```
++-------+----+----+----+----+----+----+---------+---------+---------+---------+
+| Byte  |  0 |  1 |  2 |  3 |  4 |  5 |   6-7   |   8-9   |  10-11  |  12-13  |
++-------+----+----+----+----+----+----+---------+---------+---------+---------+
+| Value | 01 | 02 | 0E | 00 | ET | 01 | X coord | Y coord | X_out   | Y_out   |
++-------+----+----+----+----+----+----+---------+---------+---------+---------+
+```
+
+| Byte | Description |
+|------|-------------|
+| 0 | Report ID (0x01) |
+| 1 | Event Type indicator (0x02 = touchscreen) |
+| 2-3 | Payload length (0x0E 0x00 = 14) |
+| 4 | Touch Event Type: 1=SHORT, 2=LONG, 3=DRAG |
+| 5 | Always 0x01 |
+| 6-7 | X coordinate (u16 LE) |
+| 8-9 | Y coordinate (u16 LE) |
+| 10-11 | X_out coordinate (u16 LE) - only for DRAG events |
+| 12-13 | Y_out coordinate (u16 LE) - only for DRAG events |
+
+#### Touch Event Types
+
+| Value | Type | Description |
+|-------|------|-------------|
+| 0x01 | SHORT | Short tap |
+| 0x02 | LONG | Long press |
+| 0x03 | DRAG | Drag gesture (includes start and end coordinates) |
+
+- X and Y coordinates are u16 Little Endian (0-799 for X, 0-99 for Y)
+- DRAG events include both start (x, y) and end (x_out, y_out) coordinates
+- Use X coordinates to determine which screen segment was tapped (0-199=A, 200-399=B, 400-599=C, 600-799=D)
+
+### Knob/Dial Input Report Format
+
+Filter: `URB_INTERRUPT in` from device
+
+```
++-------+----+----+----+----+----------+--------+--------+--------+--------+
+| Byte  |  0 |  1 |  2 |  3 |     4    |    5   |    6   |    7   |    8   |
++-------+----+----+----+----+----------+--------+--------+--------+--------+
+| Value | 01 | 03 | 05 | 00 | IsTurn   | Knob A | Knob B | Knob C | Knob D |
++-------+----+----+----+----+----------+--------+--------+--------+--------+
+```
+
+| Byte | Description |
+|------|-------------|
+| 4 | `0x01` = turning, `0x00` = pressing |
+| 5-8 | Knob action values (one per knob A-D) |
+
+#### Knob Turn Events (Byte 4 = 0x01)
+- `0x01` = Turn right
+- `0xFF` = Turn left
+
+#### Knob Press Events (Byte 4 = 0x00)
+- `0x01` = Pressed
+- `0x00` = Released
+
+### Example Knob Data
+
+| Knob | Right Turn | Left Turn | Press | Release |
+|------|------------|-----------|-------|---------|
+| A | `01 03 05 00 01 01 00 00 00` | `01 03 05 00 01 ff 00 00 00` | `01 03 05 00 00 01 00 00 00` | `01 03 05 00 00 00 00 00 00` |
+| B | `01 03 05 00 01 00 01 00 00` | `01 03 05 00 01 00 ff 00 00` | `01 03 05 00 00 00 01 00 00` | `01 03 05 00 00 00 00 00 00` |
+| C | `01 03 05 00 01 00 00 01 00` | `01 03 05 00 01 00 00 ff 00` | `01 03 05 00 00 00 00 01 00` | `01 03 05 00 00 00 00 00 00` |
+| D | `01 03 05 00 01 00 00 00 01` | `01 03 05 00 01 00 00 00 ff` | `01 03 05 00 00 00 00 00 01` | `01 03 05 00 00 00 00 00 00` |
+
+#### Dial Rotation Value Transform
+
+For dial turn events, values are interpreted as:
+- `0x01` to `0x7F`: Clockwise rotation (positive values 1-127)
+- `0x80` to `0xFF`: Counter-clockwise rotation (negative values, calculated as `-(0x100 - value)`)
+
+### Feature Reports (Stream Deck Plus)
+
+| Report ID | Direction | Size | Purpose |
+|-----------|-----------|------|---------|
+| 0x03 | SET | 32 bytes | Commands (reset, brightness) |
+| 0x05 | GET | 32 bytes | Firmware version |
+| 0x06 | GET | 32 bytes | Serial number |
+
+#### Reset Command
+```
+Payload: [0x03, 0x02, 0x00, ...]  (32 bytes)
+```
+
+#### Set Brightness Command
+```
+Payload: [0x03, 0x08, brightness, 0x00, ...]  (32 bytes)
+brightness: 0x00 to 0x64 (0-100%)
+```
+
+#### Get Serial Number
+```
+Request: read_feature(0x06, 32)
+Response: Serial number string at offset [5:]
+```
+
+#### Get Firmware Version
+```
+Request: read_feature(0x05, 32)
+Response: Version string at offset [5:]
+```
+
+### Related Projects
+
+- [DeckSurf SDK](https://github.com/dend/decksurf-sdk) - C# library supporting Stream Deck Plus
+- [DeckSurf Docs](https://docs.deck.surf/) - Documentation for the SDK
+
 ## References
 
 - [Elgato Stream Deck Module 6 HID Docs](https://docs.elgato.com/streamdeck/hid/module-6) - Official documentation
 - [Elgato Stream Deck Module 15/32 HID Docs](https://docs.elgato.com/streamdeck/hid/module-15_32) - Official documentation
+- [Reverse Engineering The Stream Deck Plus](https://den.dev/blog/reverse-engineer-stream-deck-plus/) - Den Delimarsky's blog post
 - [python-elgato-streamdeck](https://github.com/abcminiuser/python-elgato-streamdeck) - Python library for Stream Deck
 - [streamdeck-linux-gui](https://github.com/streamdeck-linux-gui/streamdeck-linux-gui) - Linux GUI for Stream Deck
 - [USB HID Specification](https://www.usb.org/hid)

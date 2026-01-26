@@ -1,14 +1,25 @@
 # GadgetDeck Display
 
-Raylib-based display binary that emulates a Stream Deck Mini USB device with a graphical touchscreen interface.
+Raylib-based display binary that emulates Stream Deck USB devices with a graphical touchscreen interface.
 **Built with DRM/KMS support for running without X11/Wayland on Raspberry Pi.**
 
 ## Features
 
-- **USB Stream Deck Mini emulation** - Appears as a real Stream Deck Mini to host software
+- **Multiple Stream Deck models** - Emulates Mini, MK.2, XL, and Plus devices
 - **Image rendering** - Displays button images sent from Stream Deck software
 - **Touch input** - Touch buttons to send HID button press events to the host
 - **Framebuffer rendering** - Runs directly on the console without X11/Wayland
+- **Plus support** - Includes 4 rotary knob UI and 800x100 touchscreen strip display
+
+## Supported Devices
+
+| Device | Buttons | Layout | Features |
+|--------|---------|--------|----------|
+| Mini | 6 | 3x2 | Basic button grid |
+| MK.2 | 15 | 5x3 | Button grid |
+| XL | 32 | 8x4 | Large button grid |
+| Plus | 8 | 4x2 | Buttons + 4 knobs + touchscreen |
+| Pedal | 3 | 3x1 | Foot pedals (no display) |
 
 ## Dependencies
 

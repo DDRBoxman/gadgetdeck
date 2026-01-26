@@ -17,6 +17,7 @@ use usb_gadget::Class;
 
 use crate::device::ButtonState;
 use crate::device::ImageStore;
+use crate::device::PlusInputState;
 use super::descriptors::StreamDeckModel;
 
 // HID Class-Specific Request Codes
@@ -436,6 +437,157 @@ pub fn run_input_report_sender(
     }
     
     log::info!("Input report sender thread stopped (sent {} reports)", report_count);
+}
+
+/// Input report sender thread for Stream Deck Plus - handles buttons, touchscreen, and knobs
+/// 
+/// This is an enhanced version of `run_input_report_sender` that also sends
+/// touchscreen touch/swipe events and rotary encoder (knob) events.
+pub fn run_plus_input_report_sender(
+    mut ep_in: EndpointSender,
+    running: Arc<AtomicBool>,
+    button_state: Arc<ButtonState>,
+    plus_state: Arc<PlusInputState>,
+) {
+    log::info!("Starting Plus input report sender thread");
+    
+    let model = StreamDeckModel::Plus;
+    let num_buttons = button_state.num_buttons();
+    
+    // Initial delay to let device fully enumerate
+    thread::sleep(Duration::from_millis(100));
+    
+    // Send initial button state
+    let input_report = button_state.build_input_report(model);
+    log::info!("Sending initial button state (all {} buttons released)", num_buttons);
+    if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&input_report)) {
+        log::warn!("Failed to send initial input report: {}", e);
+    }
+    
+    // Continue sending reports while running
+    let mut report_count = 0u64;
+    let poll_interval = Duration::from_millis(10);  // Fast polling for responsive touch/knob
+    let keepalive_interval = Duration::from_millis(100);
+    let mut last_keepalive = std::time::Instant::now();
+    
+    while running.load(Ordering::Relaxed) {
+        let mut sent_event = false;
+        
+        // Priority 1: Check for touch events (touchscreen swipe/tap)
+        if let Some(touch_event) = plus_state.take_touch_event() {
+            let report = touch_event.build_input_report();
+            log::info!(
+                "Sending touch event: {:?} at ({}, {}) -> ({}, {})",
+                touch_event.event_type, touch_event.x, touch_event.y,
+                touch_event.x_end, touch_event.y_end
+            );
+            
+            if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&report)) {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                log::warn!("Failed to send touch event: {}", e);
+            } else {
+                report_count += 1;
+                sent_event = true;
+            }
+        }
+        
+        // Priority 2: Check for knob rotation events
+        for knob_idx in 0..4u8 {
+            let knob = crate::device::KnobIndex::from(knob_idx);
+            let rotation = plus_state.take_knob_rotation(knob);
+            if rotation != 0 {
+                let report = plus_state.build_knob_turn_report(knob, rotation);
+                log::info!("Sending knob {:?} rotation: {}", knob, rotation);
+                
+                if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&report)) {
+                    if !running.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    log::warn!("Failed to send knob turn event: {}", e);
+                } else {
+                    report_count += 1;
+                    sent_event = true;
+                }
+            }
+        }
+        
+        // Priority 3: Check for knob press state changes
+        if plus_state.take_knob_changed() {
+            let report = plus_state.build_knob_press_report();
+            log::debug!("Sending knob press state update");
+            
+            if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&report)) {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                log::warn!("Failed to send knob press event: {}", e);
+            } else {
+                report_count += 1;
+                sent_event = true;
+            }
+        }
+        
+        // Priority 4: Check for button state changes
+        if button_state.take_changed() {
+            let input_report = button_state.build_input_report(model);
+            
+            // Log button states for debugging
+            let states: Vec<String> = (0..num_buttons)
+                .map(|i| if button_state.is_pressed(i) { "1" } else { "0" }.to_string())
+                .collect();
+            log::debug!("Button states: [{}]", states.join(", "));
+            
+            if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&input_report)) {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                
+                let os_error = e.raw_os_error();
+                if os_error == Some(51) || e.kind() == std::io::ErrorKind::BrokenPipe {
+                    log::debug!("EP IN disconnected, waiting...");
+                    thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                
+                log::warn!("Failed to send input report: {} (os_error: {:?})", e, os_error);
+            } else {
+                report_count += 1;
+                sent_event = true;
+            }
+        }
+        
+        // Send periodic keepalive if no events sent recently
+        if !sent_event && last_keepalive.elapsed() >= keepalive_interval {
+            let input_report = button_state.build_input_report(model);
+            if let Err(e) = ep_in.send_and_flush(Bytes::copy_from_slice(&input_report)) {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                
+                let os_error = e.raw_os_error();
+                if os_error == Some(51) || e.kind() == std::io::ErrorKind::BrokenPipe {
+                    log::debug!("EP IN disconnected, waiting...");
+                    thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                
+                log::warn!("Failed to send keepalive: {} (os_error: {:?})", e, os_error);
+            } else {
+                report_count += 1;
+                if report_count % 100 == 0 {
+                    log::debug!("Sent {} input reports", report_count);
+                }
+            }
+            last_keepalive = std::time::Instant::now();
+        }
+        
+        // Small sleep to avoid busy-waiting
+        thread::sleep(poll_interval);
+    }
+    
+    log::info!("Plus input report sender thread stopped (sent {} reports)", report_count);
 }
 
 /// Output report receiver thread - receives image data and other output reports

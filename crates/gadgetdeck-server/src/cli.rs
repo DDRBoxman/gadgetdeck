@@ -32,6 +32,8 @@ pub enum DeviceType {
     Mk2,
     /// Stream Deck XL (32 keys, 8x4 layout)
     Xl,
+    /// Stream Deck Plus (8 keys, 4 knobs, touchscreen)
+    Plus,
 }
 
 impl From<DeviceType> for StreamDeckModel {
@@ -41,6 +43,7 @@ impl From<DeviceType> for StreamDeckModel {
             DeviceType::Pedal => StreamDeckModel::Pedal,
             DeviceType::Mk2 => StreamDeckModel::Mk2,
             DeviceType::Xl => StreamDeckModel::Xl,
+            DeviceType::Plus => StreamDeckModel::Plus,
         }
     }
 }

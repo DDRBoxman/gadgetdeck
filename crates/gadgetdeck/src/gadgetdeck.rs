@@ -9,8 +9,8 @@ use std::thread::{self, JoinHandle};
 
 use usb_gadget::{default_udc, Config, Gadget, RegGadget};
 
-use crate::device::{ButtonState, ImageStore};
-use crate::usb::{CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver};
+use crate::device::{ButtonState, ImageStore, PlusInputState};
+use crate::usb::{CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver, run_plus_input_report_sender};
 
 /// Error type for GadgetDeck operations
 #[derive(Debug)]
@@ -82,6 +82,11 @@ impl GadgetDeckConfig {
     pub fn pedal(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Pedal, serial)
     }
+    
+    /// Create a configuration for Stream Deck Plus with the given serial
+    pub fn plus(serial: impl Into<String>) -> Self {
+        Self::new(StreamDeckModel::Plus, serial)
+    }
 }
 
 /// Main struct for managing a USB gadget Stream Deck emulation
@@ -125,6 +130,8 @@ pub struct GadgetDeck {
     running: Arc<AtomicBool>,
     /// Button state shared with input thread
     button_state: Arc<ButtonState>,
+    /// Plus-specific input state (touchscreen/knobs) - only used for Plus model
+    plus_state: Option<Arc<PlusInputState>>,
     /// Image store shared with output thread
     image_store: ImageStore,
     /// The registered gadget (dropped to clean up)
@@ -174,11 +181,19 @@ impl GadgetDeck {
         let button_state = ButtonState::new(model);
         let image_store = ImageStore::new();
         
+        // Create Plus-specific state if needed
+        let plus_state = if model == StreamDeckModel::Plus {
+            Some(PlusInputState::new())
+        } else {
+            None
+        };
+        
         Ok(Self {
             model,
             serial,
             running,
             button_state,
+            plus_state,
             image_store,
             gadget_reg: Some(gadget_reg),
             threads: None,
@@ -206,11 +221,20 @@ impl GadgetDeck {
         let ep_model = custom_hid.model();
         
         // Spawn input report sender thread
+        // Use Plus-specific sender for Plus model (handles touchscreen/knobs)
         let running_input = self.running.clone();
         let button_state_input = self.button_state.clone();
-        let input_thread = thread::spawn(move || {
-            run_input_report_sender(ep_in, ep_model, running_input, button_state_input);
-        });
+        let plus_state_input = self.plus_state.clone();
+        let input_thread = if ep_model == StreamDeckModel::Plus {
+            let plus_state = plus_state_input.expect("Plus state should exist for Plus model");
+            thread::spawn(move || {
+                run_plus_input_report_sender(ep_in, running_input, button_state_input, plus_state);
+            })
+        } else {
+            thread::spawn(move || {
+                run_input_report_sender(ep_in, ep_model, running_input, button_state_input);
+            })
+        };
         
         // Spawn output report receiver thread
         // For Pedal mode, we still need to drain the output endpoint even though there's no display
@@ -298,6 +322,31 @@ impl GadgetDeck {
         self.button_state.clone()
     }
     
+    /// Get the Plus-specific input state (touchscreen/knobs)
+    ///
+    /// Returns `None` if not emulating a Stream Deck Plus.
+    /// Use this to send touchscreen touch/swipe events and knob events.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+    ///
+    /// let config = GadgetDeckConfig::plus("SERIAL123");
+    /// let deck = GadgetDeck::new(config).unwrap();
+    ///
+    /// if let Some(plus) = deck.plus_state() {
+    ///     // Send a horizontal swipe from left to right
+    ///     plus.swipe_horizontal(50, 750);
+    ///     
+    ///     // Send a tap on segment B
+    ///     plus.tap(300, 50);
+    /// }
+    /// ```
+    pub fn plus_state(&self) -> Option<Arc<PlusInputState>> {
+        self.plus_state.clone()
+    }
+    
     /// Get the image store
     ///
     /// Use this to access received button images.
@@ -341,5 +390,11 @@ mod tests {
     fn test_config_pedal() {
         let config = GadgetDeckConfig::pedal("SERIAL");
         assert_eq!(config.model, StreamDeckModel::Pedal);
+    }
+    
+    #[test]
+    fn test_config_plus() {
+        let config = GadgetDeckConfig::plus("SERIAL");
+        assert_eq!(config.model, StreamDeckModel::Plus);
     }
 }

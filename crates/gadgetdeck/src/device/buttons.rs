@@ -29,6 +29,7 @@ impl ButtonState {
             StreamDeckModel::Pedal => 3,
             StreamDeckModel::Mk2 => 15,
             StreamDeckModel::Xl => 32,
+            StreamDeckModel::Plus => 8,
         };
         
         Arc::new(Self {
@@ -164,6 +165,31 @@ impl ButtonState {
                 // Remaining bytes (after key states) are already zero-initialized
                 report
             }
+            StreamDeckModel::Plus => {
+                // Plus format (similar to MK2/XL but with 8 buttons):
+                // [0] Report ID (0x01)
+                // [1] Command (0x00 for button state)
+                // [2] Number of buttons (0x08)
+                // [3] 0x00
+                // [4+] Button states (8 bytes)
+                // 
+                // Per research: "01 00 08 00 00 00 00 01 00 00 00 00 ..." (button 4 pressed)
+                let header_size = 4;
+                let report_len = 512; // Fixed size per HID descriptor
+                let mut report = vec![0u8; report_len];
+                
+                report[0] = 0x01;  // Report ID
+                report[1] = 0x00;  // Command: button state
+                report[2] = 0x08;  // Number of buttons (8)
+                report[3] = 0x00;
+                
+                // Button states starting at offset 4
+                for i in 0..num_buttons {
+                    report[header_size + i] = if self.buttons[i].load(Ordering::Relaxed) { 0x01 } else { 0x00 };
+                }
+                
+                report
+            }
         }
     }
 }
@@ -259,5 +285,25 @@ mod tests {
         let report = state.build_input_report(StreamDeckModel::Mk2);
         // MK2/XL must send exactly 512 bytes to match HID report descriptor
         assert_eq!(report.len(), 512);
+    }
+    
+    #[test]
+    fn test_input_report_format_plus() {
+        let state = ButtonState::new(StreamDeckModel::Plus);
+        assert_eq!(state.num_buttons(), 8);
+        
+        // Press button 4 (matches example from research: "button 4 pressed")
+        state.press(3);  // Button 4 is index 3 (zero-indexed)
+        
+        let report = state.build_input_report(StreamDeckModel::Plus);
+        assert_eq!(report.len(), 512);  // Must be exactly 512 bytes per HID descriptor
+        assert_eq!(report[0], 0x01);  // Report ID
+        assert_eq!(report[1], 0x00);  // Command: button state
+        assert_eq!(report[2], 0x08);  // Number of buttons (8)
+        assert_eq!(report[3], 0x00);
+        assert_eq!(report[4], 0x00);  // Button 0 released
+        assert_eq!(report[5], 0x00);  // Button 1 released
+        assert_eq!(report[6], 0x00);  // Button 2 released
+        assert_eq!(report[7], 0x01);  // Button 3 pressed
     }
 }

@@ -5,7 +5,9 @@
 
 pub mod buttons;
 pub mod image;
+pub mod plus;
 
 // Re-exports for convenience
 pub use buttons::ButtonState;
 pub use image::{ButtonImage, ImageStore, ImageStats, ImagePacket, ImagePacketHeader, ImageError, ImageEvent, ImageEventReceiver};
+pub use plus::{PlusInputState, TouchEvent, TouchEventType, KnobEvent, KnobIndex, KnobDirection};
