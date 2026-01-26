@@ -715,15 +715,15 @@ impl Button {
     
     /// Draw the button
     fn draw(&self, d: &mut RaylibDrawHandle) {
-        let base_color = if self.pressed { Color::DARKBLUE } else { Color::DARKGRAY };
-        
-        // Button background with rounded corners
-        d.draw_rectangle_rounded(
-            self.rect,
-            self.corner_radius / self.size as f32,
-            8,
-            base_color,
-        );
+        // Only draw background when pressed (no grey background when idle)
+        if self.pressed {
+            d.draw_rectangle_rounded(
+                self.rect,
+                self.corner_radius / self.size as f32,
+                8,
+                Color::DARKBLUE,
+            );
+        }
         
         // Draw texture if we have one, otherwise draw placeholder
         if let Some(ref texture) = self.texture {
@@ -766,14 +766,6 @@ impl Button {
             );
         }
         
-        // Button border - brighter when pressed
-        let border_color = if self.pressed { Color::WHITE } else { Color::GRAY };
-        d.draw_rectangle_rounded_lines(
-            self.rect,
-            self.corner_radius / self.size as f32,
-            8,
-            border_color,
-        );
     }
 }
 
