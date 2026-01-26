@@ -1,0 +1,21 @@
+[package]
+name = "gadgetdeck"
+version = "0.1.0"
+edition = "2024"
+description = "USB Gadget Stream Deck Emulator Library"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/DDRBoxman/gadgetdeck"
+keywords = ["usb", "gadget", "streamdeck", "hid", "raspberry-pi"]
+categories = ["hardware-support", "embedded"]
+
+[dependencies]
+# USB gadget support
+usb-gadget = "0.7"
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# System interfaces
+libc = "0.2"
+bytes = "1"

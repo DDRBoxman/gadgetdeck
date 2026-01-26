@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GadgetDeck Control Panel</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { }
+        .status-indicator {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #888;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .status-indicator .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: #888;
+        }
+        .status-indicator.connected .dot { background: #44ff44; }
+        .status-indicator.disconnected .dot { background: #ff4444; }
+        
+        .buttons-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--key-cols, 3), 1fr);
+            gap: 20px;
+            justify-items: center;
+        }
+        .button-card {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .button-card:hover {
+            transform: scale(1.05);
+        }
+        .button-card.pressed {
+            transform: scale(0.95);
+            filter: brightness(1.3);
+        }
+        .button-image {
+            width: 100px;
+            height: 100px;
+            background: #111;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .button-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        /* BMP format (Mini): images are rotated 90° CW and mirrored */
+        .image-format-bmp .button-image img {
+            transform: rotate(270deg) scaleX(-1);
+        }
+        /* JPEG format (MK.2/XL): images are rotated 180° */
+        .image-format-jpeg .button-image img {
+            transform: rotate(180deg);
+        }
+        
+        .stats {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stats h3 { margin-top: 0; color: #00d4ff; }
+    </style>
+</head>
+<body>
+    <div class="container image-format-{{IMAGE_FORMAT}}" style="--key-cols: {{KEY_COLS}};">        
+        <div class="buttons-section">
+            <div class="buttons-grid" id="buttons"></div>
+        </div>
+    </div>
+    
+    <div class="status-indicator" id="status-indicator">
+        <span class="dot"></span>
+        <span id="status-text">Connecting...</span>
+    </div>
+
+    <script>
+        let numButtons = 6;
+        let buttonImages = {}; // Store images by button ID
+        let ws = null;
+        
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                const indicator = document.getElementById('status-indicator');
+                indicator.className = 'status-indicator connected';
+                document.getElementById('status-text').textContent = 'Connected';
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'image') {
+                        // Store the base64 image data
+                        buttonImages[msg.button_id] = msg.image_data;
+                        // Update the specific button image
+                        updateButtonImage(msg.button_id);
+                    } else if (msg.type === 'buttons') {
+                        // Update button states
+                        updateButtonsUI(msg.buttons);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse WebSocket message:', e);
+                }
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting...');
+                const indicator = document.getElementById('status-indicator');
+                indicator.className = 'status-indicator disconnected';
+                document.getElementById('status-text').textContent = 'Disconnected';
+                setTimeout(connectWebSocket, 2000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+        
+        const imageFormat = '{{IMAGE_FORMAT}}'.toLowerCase();
+        const imageMimeType = imageFormat === 'jpeg' ? 'image/jpeg' : 'image/bmp';
+        
+        function updateButtonImage(buttonId) {
+            const img = document.getElementById(`btn-img-${buttonId}`);
+            if (img && buttonImages[buttonId]) {
+                img.src = `data:${imageMimeType};base64,${buttonImages[buttonId]}`;
+                img.style.display = 'block';
+                img.parentNode.querySelector('.no-image')?.remove();
+            }
+        }
+        
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                numButtons = data.num_buttons;
+            } catch (e) {
+                console.error('Failed to fetch status:', e);
+            }
+        }
+        
+        async function fetchButtons() {
+            try {
+                const res = await fetch('/api/buttons');
+                const data = await res.json();
+                updateButtonsUI(data.buttons);
+            } catch (e) {
+                console.error('Failed to fetch buttons:', e);
+            }
+        }
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function updateButtonsUI(buttons) {
+            const container = document.getElementById('buttons');
+            container.innerHTML = buttons.map(btn => {
+                const hasImage = buttonImages[btn.id];
+                return `
+                <div class="button-card ${btn.pressed ? 'pressed' : ''}" 
+                     onmousedown="pressButton(${btn.id})" 
+                     onmouseup="releaseButton(${btn.id})"
+                     onmouseleave="releaseButton(${btn.id})">
+                    <div class="button-image">
+                        <img id="btn-img-${btn.id}" 
+                             src="${hasImage ? 'data:' + imageMimeType + ';base64,' + buttonImages[btn.id] : ''}" 
+                             style="${hasImage ? '' : 'display:none'}">
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        async function pressButton(id) {
+            await fetch(`/api/buttons/${id}/press`, { method: 'POST' });
+            fetchButtons();
+        }
+        
+        async function releaseButton(id) {
+            await fetch(`/api/buttons/${id}/release`, { method: 'POST' });
+            fetchButtons();
+        }
+        
+        // Initial setup
+        fetchStatus();
+        connectWebSocket();
+    </script>
+</body>
+</html>
