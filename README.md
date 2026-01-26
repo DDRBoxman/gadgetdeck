@@ -57,6 +57,9 @@ sudo ./gadgetdeck-server --device mk2
 
 Visit the local address of the pi on port 3000 from another machine ex: `http://10.0.0.10:3000`
 
+<img width="740" height="566" alt="Screenshot 2026-01-25 at 10 16 39 PM" src="https://github.com/user-attachments/assets/620d49cc-7f5b-40e1-8fcc-215fbbd3c098" />
+
+
 
 ### Pi 5 with touchscreen
 
@@ -78,7 +81,10 @@ sudo vi /boot/firmware/config.txt
 Add `dtoverlay=dwc2` to the bottom of the file and reboot
 
 ```
-sudo ./gadgetdeck-display --device xl
+sudo ./gadgetdeck-display --device plus
 ```
 
 The device should show up on your display and respond to touch events.
+
+<img width="1600" height="600" alt="screenshot_drm" src="https://github.com/user-attachments/assets/00030d97-3fb8-49dd-8e2a-dc9e4fc5538f" />
+
