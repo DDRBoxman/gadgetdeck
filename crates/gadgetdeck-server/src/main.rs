@@ -23,7 +23,7 @@ use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 
 use cli::Args;
-use state::{AppState, WsMessage};
+use state::{AppState, LcdStore, WsMessage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let button_state = deck.button_state();
     let image_store = deck.image_store();
     let image_rx = deck.subscribe_images();
+    let plus_state = deck.plus_state();
 
     // ========================================================================
     // Set up Web Server
@@ -68,6 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Create broadcast channel for WebSocket updates
     let (ws_tx, _) = broadcast::channel::<WsMessage>(32);
+    
+    // Create LCD store for Plus model
+    let lcd_store = LcdStore::new();
     
     let (key_cols, _key_rows) = model.key_matrix();
     let state = AppState {
@@ -77,11 +81,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         key_cols: key_cols as usize,
         running: running.clone(),
         ws_tx: ws_tx.clone(),
+        plus_state: plus_state.clone(),
+        lcd_store: lcd_store.clone(),
     };
 
     // Spawn a task to watch for image changes and broadcast them
     let watch_running = running.clone();
     let watch_tx = ws_tx.clone();
+    let watch_lcd_store = lcd_store.clone();
     tokio::task::spawn_blocking(move || {
         use base64::Engine;
         use std::time::Duration;
@@ -104,7 +111,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "LCD image update: x_off={}, y_off={}, {}x{}, {} bytes",
                         x_offset, y_offset, width, height, image.len()
                     );
-                    // TODO: Add WebSocket message for LCD updates if needed
+                    
+                    // Store the segment for replay on new WebSocket connections
+                    watch_lcd_store.update(x_offset, y_offset, width, height, image.as_bytes().to_vec());
+                    
+                    let image_data = base64::engine::general_purpose::STANDARD.encode(image.as_bytes());
+                    let update = WsMessage::LcdUpdate {
+                        x_offset,
+                        y_offset,
+                        width,
+                        height,
+                        image_data,
+                    };
+                    let _ = watch_tx.send(update);
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // Check running flag and continue
@@ -132,6 +151,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/buttons/{id}/click", post(handlers::click_button_handler))
         .route("/api/images", get(handlers::images_handler))
         .route("/api/images/{id}", get(handlers::get_image_handler))
+        // Plus-specific endpoints (knobs and touchscreen)
+        .route("/api/knobs", get(handlers::knobs_handler))
+        .route("/api/knobs/{id}/press", post(handlers::press_knob_handler))
+        .route("/api/knobs/{id}/release", post(handlers::release_knob_handler))
+        .route("/api/knobs/{id}/click", post(handlers::click_knob_handler))
+        .route("/api/knobs/{id}/turn", post(handlers::turn_knob_handler))
+        .route("/api/lcd/tap", post(handlers::lcd_tap_handler))
+        .route("/api/lcd/swipe", post(handlers::lcd_swipe_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 

@@ -62,7 +62,7 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
             }
         }
 
-        // Send current images
+        // Send current button images
         for i in 0..state.button_state.num_buttons() {
             if let Some(image) = state.image_store.get_image(i) {
                 let update = WsMessage::ImageUpdate {
@@ -73,6 +73,22 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
                     if sender.send(Message::Text(json.into())).await.is_err() {
                         return;
                     }
+                }
+            }
+        }
+
+        // Send current LCD segments (for Plus model)
+        for segment in state.lcd_store.get_all() {
+            let update = WsMessage::LcdUpdate {
+                x_offset: segment.x_offset,
+                y_offset: segment.y_offset,
+                width: segment.width,
+                height: segment.height,
+                image_data: base64::engine::general_purpose::STANDARD.encode(&segment.image_data),
+            };
+            if let Ok(json) = serde_json::to_string(&update) {
+                if sender.send(Message::Text(json.into())).await.is_err() {
+                    return;
                 }
             }
         }
@@ -254,5 +270,151 @@ pub async fn get_image_handler(
             (StatusCode::OK, [("content-type", content_type)], bytes).into_response()
         }
         None => (StatusCode::NOT_FOUND, "Image not found").into_response(),
+    }
+}
+
+// ============================================================================
+// Plus-specific API: Knobs
+// ============================================================================
+
+use crate::state::{KnobInfo, SwipeRequest, TapRequest, TurnKnobRequest};
+use gadgetdeck::KnobIndex;
+
+/// Knobs response
+#[derive(Serialize)]
+pub struct KnobsResponse {
+    pub available: bool,
+    pub knobs: Vec<KnobInfo>,
+}
+
+/// List available knobs (Plus only)
+pub async fn knobs_handler(State(state): State<AppState>) -> Json<KnobsResponse> {
+    let available = state.plus_state.is_some();
+    let knobs = if available {
+        vec![
+            KnobInfo { id: 0, name: "A".to_string() },
+            KnobInfo { id: 1, name: "B".to_string() },
+            KnobInfo { id: 2, name: "C".to_string() },
+            KnobInfo { id: 3, name: "D".to_string() },
+        ]
+    } else {
+        Vec::new()
+    };
+    Json(KnobsResponse { available, knobs })
+}
+
+/// Press a knob
+pub async fn press_knob_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+) -> impl IntoResponse {
+    if id > 3 {
+        return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
+    }
+    
+    match &state.plus_state {
+        Some(plus) => {
+            plus.press_knob(KnobIndex::from(id));
+            (StatusCode::OK, format!("Knob {} pressed", id)).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
+    }
+}
+
+/// Release a knob
+pub async fn release_knob_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+) -> impl IntoResponse {
+    if id > 3 {
+        return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
+    }
+    
+    match &state.plus_state {
+        Some(plus) => {
+            plus.release_knob(KnobIndex::from(id));
+            (StatusCode::OK, format!("Knob {} released", id)).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
+    }
+}
+
+/// Click a knob (press and release)
+pub async fn click_knob_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+) -> impl IntoResponse {
+    if id > 3 {
+        return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
+    }
+    
+    match &state.plus_state {
+        Some(plus) => {
+            let plus = plus.clone();
+            tokio::task::spawn_blocking(move || {
+                plus.press_knob(KnobIndex::from(id));
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                plus.release_knob(KnobIndex::from(id));
+            })
+            .await
+            .ok();
+            (StatusCode::OK, format!("Knob {} clicked", id)).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
+    }
+}
+
+/// Turn a knob
+pub async fn turn_knob_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+    Json(req): Json<TurnKnobRequest>,
+) -> impl IntoResponse {
+    if id > 3 {
+        return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
+    }
+    
+    match &state.plus_state {
+        Some(plus) => {
+            plus.turn_knob(KnobIndex::from(id), req.steps);
+            let direction = if req.steps > 0 { "clockwise" } else { "counter-clockwise" };
+            (StatusCode::OK, format!("Knob {} turned {} {} steps", id, direction, req.steps.abs())).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
+    }
+}
+
+// ============================================================================
+// Plus-specific API: LCD Touchscreen
+// ============================================================================
+
+/// Tap the LCD touchscreen
+pub async fn lcd_tap_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TapRequest>,
+) -> impl IntoResponse {
+    match &state.plus_state {
+        Some(plus) => {
+            plus.tap(req.x, req.y);
+            (StatusCode::OK, format!("LCD tap at ({}, {})", req.x, req.y)).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
+    }
+}
+
+/// Swipe on the LCD touchscreen
+pub async fn lcd_swipe_handler(
+    State(state): State<AppState>,
+    Json(req): Json<SwipeRequest>,
+) -> impl IntoResponse {
+    match &state.plus_state {
+        Some(plus) => {
+            plus.swipe(req.start_x, req.start_y, req.end_x, req.end_y);
+            (StatusCode::OK, format!(
+                "LCD swipe from ({}, {}) to ({}, {})",
+                req.start_x, req.start_y, req.end_x, req.end_y
+            )).into_response()
+        }
+        None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
     }
 }

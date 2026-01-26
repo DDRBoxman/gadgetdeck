@@ -83,6 +83,136 @@
         .image-format-jpeg .button-image img {
             transform: rotate(180deg);
         }
+        /* Plus: JPEG but no rotation needed */
+        .image-format-jpeg.model-plus .button-image img {
+            transform: none;
+        }
+        
+        /* LCD Touchscreen Strip (Plus only) */
+        .lcd-section {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+        .lcd-section.visible { display: block; }
+        .lcd-strip-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .lcd-strip {
+            width: 100%;
+            height: 100px;
+            background: #111;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+        }
+        .lcd-strip canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .lcd-strip .segment-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+        .lcd-strip .segment-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .lcd-label {
+            text-align: center;
+            color: #888;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        
+        /* Knobs section (Plus only) */
+        .knobs-section {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+        .knobs-section.visible { display: block; }
+        .knobs-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            justify-items: center;
+        }
+        .knob {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .knob-dial {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3a3a4a 0%, #2a2a3a 100%);
+            border: 3px solid #555;
+            position: relative;
+            cursor: grab;
+            transition: border-color 0.2s;
+            user-select: none;
+        }
+        .knob-dial:hover {
+            border-color: #00d4ff;
+        }
+        .knob-dial.active {
+            border-color: #00d4ff;
+            cursor: grabbing;
+        }
+        .knob-dial::after {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 20px;
+            background: #fff;
+            border-radius: 2px;
+        }
+        .knob-label {
+            font-size: 14px;
+            color: #aaa;
+            font-weight: bold;
+        }
+        .knob-controls {
+            display: flex;
+            gap: 8px;
+        }
+        .knob-btn {
+            padding: 5px 10px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ddd;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .knob-btn:hover {
+            background: #444;
+            border-color: #00d4ff;
+        }
         
         .stats {
             background: rgba(255, 255, 255, 0.05);
@@ -98,6 +228,26 @@
         <div class="buttons-section">
             <div class="buttons-grid" id="buttons"></div>
         </div>
+        
+        <!-- LCD Touchscreen Strip (Plus only) -->
+        <div class="lcd-section" id="lcd-section">
+            <div class="lcd-strip-container">
+                <div class="lcd-strip" id="lcd-strip">
+                    <canvas id="lcd-canvas" width="800" height="100"></canvas>
+                    <div class="segment-lines">
+                        <div class="segment-line" style="left: 25%"></div>
+                        <div class="segment-line" style="left: 50%"></div>
+                        <div class="segment-line" style="left: 75%"></div>
+                    </div>
+                </div>
+                <div class="lcd-label">Touchscreen Strip (drag to swipe, click to tap)</div>
+            </div>
+        </div>
+        
+        <!-- Knobs (Plus only) -->
+        <div class="knobs-section" id="knobs-section">
+            <div class="knobs-grid" id="knobs"></div>
+        </div>
     </div>
     
     <div class="status-indicator" id="status-indicator">
@@ -108,7 +258,22 @@
     <script>
         let numButtons = 6;
         let buttonImages = {}; // Store images by button ID
+        let lcdSegments = []; // Buffer LCD segment updates until canvas is ready
         let ws = null;
+        let isPlus = false;
+        let lcdCanvas = null;
+        let lcdCtx = null;
+        let lcdReady = false;
+        
+        // Knob drag state
+        let dragKnob = null;
+        let dragStartX = 0;
+        let dragLastX = 0;
+        
+        // LCD swipe state
+        let lcdDragging = false;
+        let lcdStartX = 0;
+        let lcdStartY = 0;
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -132,6 +297,9 @@
                     } else if (msg.type === 'buttons') {
                         // Update button states
                         updateButtonsUI(msg.buttons);
+                    } else if (msg.type === 'lcd') {
+                        // LCD segment update (Plus only)
+                        updateLcdSegment(msg);
                     }
                 } catch (e) {
                     console.error('Failed to parse WebSocket message:', e);
@@ -163,14 +331,238 @@
             }
         }
         
+        function updateLcdSegment(msg) {
+            // Buffer the update if canvas isn't ready yet
+            if (!lcdReady) {
+                lcdSegments.push(msg);
+                return;
+            }
+            
+            if (!lcdCtx) return;
+            
+            // Decode the base64 JPEG and draw it at the specified offset
+            const img = new Image();
+            img.onload = () => {
+                lcdCtx.drawImage(img, msg.x_offset, msg.y_offset, msg.width, msg.height);
+            };
+            img.src = `data:image/jpeg;base64,${msg.image_data}`;
+        }
+        
         async function fetchStatus() {
             try {
                 const res = await fetch('/api/status');
                 const data = await res.json();
                 numButtons = data.num_buttons;
+                
+                // Check if this is a Plus device (model name is "Stream Deck +")
+                if (data.model && (data.model.includes('+') || data.model.toLowerCase().includes('plus'))) {
+                    isPlus = true;
+                    document.querySelector('.container').classList.add('model-plus');
+                    document.getElementById('lcd-section').classList.add('visible');
+                    document.getElementById('knobs-section').classList.add('visible');
+                    initLcdCanvas();
+                    fetchKnobs();
+                }
             } catch (e) {
                 console.error('Failed to fetch status:', e);
             }
+        }
+        
+        async function fetchKnobs() {
+            try {
+                const res = await fetch('/api/knobs');
+                const data = await res.json();
+                if (data.available) {
+                    updateKnobsUI(data.knobs);
+                }
+            } catch (e) {
+                console.error('Failed to fetch knobs:', e);
+            }
+        }
+        
+        function updateKnobsUI(knobs) {
+            const container = document.getElementById('knobs');
+            container.innerHTML = knobs.map(knob => `
+                <div class="knob" data-id="${knob.id}">
+                    <div class="knob-dial" 
+                         id="knob-dial-${knob.id}"
+                         onmousedown="startKnobDrag(event, ${knob.id})"
+                         ontouchstart="startKnobDrag(event, ${knob.id})"></div>
+                    <div class="knob-label">${knob.name}</div>
+                    <div class="knob-controls">
+                        <button class="knob-btn" onclick="turnKnob(${knob.id}, -3)">◀</button>
+                        <button class="knob-btn" onclick="clickKnob(${knob.id})">●</button>
+                        <button class="knob-btn" onclick="turnKnob(${knob.id}, 3)">▶</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function initLcdCanvas() {
+            lcdCanvas = document.getElementById('lcd-canvas');
+            lcdCtx = lcdCanvas.getContext('2d');
+            lcdCtx.fillStyle = '#111';
+            lcdCtx.fillRect(0, 0, 800, 100);
+            lcdReady = true;
+            
+            // Process any buffered LCD updates
+            while (lcdSegments.length > 0) {
+                const msg = lcdSegments.shift();
+                updateLcdSegment(msg);
+            }
+            
+            // Add touch/mouse handlers for swipe
+            const strip = document.getElementById('lcd-strip');
+            strip.addEventListener('mousedown', startLcdDrag);
+            strip.addEventListener('touchstart', startLcdDrag);
+            document.addEventListener('mousemove', moveLcdDrag);
+            document.addEventListener('touchmove', moveLcdDrag);
+            document.addEventListener('mouseup', endLcdDrag);
+            document.addEventListener('touchend', endLcdDrag);
+        }
+        
+        function getLcdCoords(e, strip) {
+            const rect = strip.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const x = Math.round(((clientX - rect.left) / rect.width) * 800);
+            const y = Math.round(((clientY - rect.top) / rect.height) * 100);
+            return { x: Math.max(0, Math.min(799, x)), y: Math.max(0, Math.min(99, y)) };
+        }
+        
+        function startLcdDrag(e) {
+            e.preventDefault();
+            const strip = document.getElementById('lcd-strip');
+            const coords = getLcdCoords(e, strip);
+            lcdDragging = true;
+            lcdStartX = coords.x;
+            lcdStartY = coords.y;
+        }
+        
+        function moveLcdDrag(e) {
+            // Nothing special during drag
+        }
+        
+        async function endLcdDrag(e) {
+            if (!lcdDragging) return;
+            lcdDragging = false;
+            
+            const strip = document.getElementById('lcd-strip');
+            const rect = strip.getBoundingClientRect();
+            const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+            
+            // Check if still over the strip
+            if (clientX < rect.left || clientX > rect.right || 
+                clientY < rect.top || clientY > rect.bottom) {
+                return;
+            }
+            
+            const endX = Math.round(((clientX - rect.left) / rect.width) * 800);
+            const endY = Math.round(((clientY - rect.top) / rect.height) * 100);
+            
+            const dx = Math.abs(endX - lcdStartX);
+            const dy = Math.abs(endY - lcdStartY);
+            const distance = Math.max(dx, dy);
+            
+            if (distance > 30) {
+                // Swipe gesture
+                await fetch('/api/lcd/swipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_x: lcdStartX,
+                        start_y: lcdStartY,
+                        end_x: Math.max(0, Math.min(799, endX)),
+                        end_y: Math.max(0, Math.min(99, endY))
+                    })
+                });
+            } else {
+                // Tap gesture
+                await fetch('/api/lcd/tap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: lcdStartX, y: lcdStartY })
+                });
+            }
+        }
+        
+        // Knob drag handlers
+        function startKnobDrag(e, knobId) {
+            e.preventDefault();
+            dragKnob = knobId;
+            dragStartX = e.touches ? e.touches[0].clientX : e.clientX;
+            dragLastX = dragStartX;
+            document.getElementById(`knob-dial-${knobId}`).classList.add('active');
+            
+            document.addEventListener('mousemove', moveKnobDrag);
+            document.addEventListener('touchmove', moveKnobDrag);
+            document.addEventListener('mouseup', endKnobDrag);
+            document.addEventListener('touchend', endKnobDrag);
+        }
+        
+        async function moveKnobDrag(e) {
+            if (dragKnob === null) return;
+            
+            const x = e.touches ? e.touches[0].clientX : e.clientX;
+            const delta = x - dragLastX;
+            
+            // Require at least 15px movement for a step
+            if (Math.abs(delta) >= 15) {
+                const steps = Math.sign(delta) * Math.floor(Math.abs(delta) / 15);
+                dragLastX = x;
+                
+                // Rotate the dial visually
+                const dial = document.getElementById(`knob-dial-${dragKnob}`);
+                const currentRotation = parseFloat(dial.dataset.rotation || 0);
+                const newRotation = currentRotation + (steps * 15);
+                dial.dataset.rotation = newRotation;
+                dial.style.transform = `rotate(${newRotation}deg)`;
+                
+                // Send turn event
+                await fetch(`/api/knobs/${dragKnob}/turn`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ steps: steps })
+                });
+            }
+        }
+        
+        async function endKnobDrag(e) {
+            if (dragKnob === null) return;
+            
+            document.getElementById(`knob-dial-${dragKnob}`).classList.remove('active');
+            
+            // Check if it was just a tap (no significant movement)
+            const x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            if (Math.abs(x - dragStartX) < 10) {
+                await clickKnob(dragKnob);
+            }
+            
+            dragKnob = null;
+            document.removeEventListener('mousemove', moveKnobDrag);
+            document.removeEventListener('touchmove', moveKnobDrag);
+            document.removeEventListener('mouseup', endKnobDrag);
+            document.removeEventListener('touchend', endKnobDrag);
+        }
+        
+        async function turnKnob(id, steps) {
+            await fetch(`/api/knobs/${id}/turn`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ steps: steps })
+            });
+            
+            // Visual feedback
+            const dial = document.getElementById(`knob-dial-${id}`);
+            const currentRotation = parseFloat(dial.dataset.rotation || 0);
+            const newRotation = currentRotation + (steps * 15);
+            dial.dataset.rotation = newRotation;
+            dial.style.transform = `rotate(${newRotation}deg)`;
+        }
+        
+        async function clickKnob(id) {
+            await fetch(`/api/knobs/${id}/click`, { method: 'POST' });
         }
         
         async function fetchButtons() {
@@ -219,7 +611,8 @@
             fetchButtons();
         }
         
-        // Initial setup
+        // Initial setup - initialize LCD canvas immediately so it's ready for updates
+        initLcdCanvas();
         fetchStatus();
         connectWebSocket();
     </script>
