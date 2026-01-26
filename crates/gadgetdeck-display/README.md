@@ -213,3 +213,17 @@ Works with any software that supports Stream Deck devices:
 ## License
 
 See the main repository LICENSE file.
+
+## Taking Screenshots
+
+Since `gadgetdeck-display` uses DRM/KMS directly (bypassing the console framebuffer), standard tools like `fbgrab` won't work. Use `ffmpeg` with the `kmsgrab` input to capture the screen:
+
+```bash
+# Install ffmpeg if needed
+sudo apt-get install -y ffmpeg
+
+# Capture a screenshot (while gadgetdeck-display is running)
+sudo ffmpeg -y -device /dev/dri/card1 -f kmsgrab -i - -frames:v 1 -vf 'hwdownload,format=bgr0' screenshot.png
+```
+
+> **Note:** You may need to adjust `/dev/dri/card1` to match your GPU device. Check `ls /dev/dri/` for available devices.
