@@ -9,7 +9,7 @@ use std::thread::{self, JoinHandle};
 
 use usb_gadget::{default_udc, Config, Gadget, RegGadget};
 
-use crate::device::{ButtonState, ImageStore, PlusInputState};
+use crate::device::{ButtonState, ImageStore, NeoInputState, PlusInputState};
 use crate::usb::{CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver, run_plus_input_report_sender};
 
 /// Error type for GadgetDeck operations
@@ -87,6 +87,11 @@ impl GadgetDeckConfig {
     pub fn plus(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Plus, serial)
     }
+    
+    /// Create a configuration for Stream Deck Neo with the given serial
+    pub fn neo(serial: impl Into<String>) -> Self {
+        Self::new(StreamDeckModel::Neo, serial)
+    }
 }
 
 /// Main struct for managing a USB gadget Stream Deck emulation
@@ -132,6 +137,8 @@ pub struct GadgetDeck {
     button_state: Arc<ButtonState>,
     /// Plus-specific input state (touchscreen/knobs) - only used for Plus model
     plus_state: Option<Arc<PlusInputState>>,
+    /// Neo-specific input state (touch point LEDs) - only used for Neo model
+    neo_state: Option<Arc<NeoInputState>>,
     /// Image store shared with output thread
     image_store: ImageStore,
     /// The registered gadget (dropped to clean up)
@@ -188,12 +195,20 @@ impl GadgetDeck {
             None
         };
         
+        // Create Neo-specific state if needed
+        let neo_state = if model == StreamDeckModel::Neo {
+            Some(NeoInputState::new())
+        } else {
+            None
+        };
+        
         Ok(Self {
             model,
             serial,
             running,
             button_state,
             plus_state,
+            neo_state,
             image_store,
             gadget_reg: Some(gadget_reg),
             threads: None,
@@ -347,6 +362,32 @@ impl GadgetDeck {
         self.plus_state.clone()
     }
     
+    /// Get the Neo-specific input state (touch point LEDs)
+    ///
+    /// Returns `None` if not emulating a Stream Deck Neo.
+    /// Use this to control the touch point LED colors.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+    /// use gadgetdeck::device::{NeoTouchPoint, RgbColor};
+    ///
+    /// let config = GadgetDeckConfig::neo("SERIAL123");
+    /// let deck = GadgetDeck::new(config).unwrap();
+    ///
+    /// if let Some(neo) = deck.neo_state() {
+    ///     // Set left touch point LED to red
+    ///     neo.set_led_color(NeoTouchPoint::Left, RgbColor::red());
+    ///     
+    ///     // Set right touch point LED to custom color
+    ///     neo.set_led_color(NeoTouchPoint::Right, RgbColor::new(128, 64, 255));
+    /// }
+    /// ```
+    pub fn neo_state(&self) -> Option<Arc<NeoInputState>> {
+        self.neo_state.clone()
+    }
+    
     /// Get the image store
     ///
     /// Use this to access received button images.
@@ -396,5 +437,11 @@ mod tests {
     fn test_config_plus() {
         let config = GadgetDeckConfig::plus("SERIAL");
         assert_eq!(config.model, StreamDeckModel::Plus);
+    }
+    
+    #[test]
+    fn test_config_neo() {
+        let config = GadgetDeckConfig::neo("SERIAL");
+        assert_eq!(config.model, StreamDeckModel::Neo);
     }
 }

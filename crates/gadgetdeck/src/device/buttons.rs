@@ -30,6 +30,7 @@ impl ButtonState {
             StreamDeckModel::Mk2 => 15,
             StreamDeckModel::Xl => 32,
             StreamDeckModel::Plus => 8,
+            StreamDeckModel::Neo => 10,  // 8 keys + 2 touch points
         };
         
         Arc::new(Self {
@@ -184,6 +185,32 @@ impl ButtonState {
                 report[3] = 0x00;
                 
                 // Button states starting at offset 4
+                for i in 0..num_buttons {
+                    report[header_size + i] = if self.buttons[i].load(Ordering::Relaxed) { 0x01 } else { 0x00 };
+                }
+                
+                report
+            }
+            StreamDeckModel::Neo => {
+                // Neo format (similar to MK2/XL but with 8 keys + 2 touch points = 10 total):
+                // [0] Report ID (0x01)
+                // [1] Command (0x00 for button state)
+                // [2-3] Payload length (u16 LE) = 10 (8 keys + 2 touch points)
+                // [4+] Button states (10 bytes: 8 keys + 2 touch points)
+                //
+                // Per research: touch points are at indices 8-9 (left=8, right=9)
+                let header_size = 4;
+                let report_len = 512; // Fixed size per HID descriptor
+                let mut report = vec![0u8; report_len];
+                
+                report[0] = 0x01;  // Report ID
+                report[1] = 0x00;  // Command: key press state change
+                
+                // Payload length (u16 LE) = 10 (8 keys + 2 touch points)
+                report[2] = 0x0A;  // 10 low byte
+                report[3] = 0x00;  // 10 high byte
+                
+                // Button states starting at offset 4 (includes touch points at indices 8-9)
                 for i in 0..num_buttons {
                     report[header_size + i] = if self.buttons[i].load(Ordering::Relaxed) { 0x01 } else { 0x00 };
                 }

@@ -116,10 +116,12 @@ impl ImageEventReceiver {
 pub enum ImageCommand {
     /// Write image data to a button - Mini uses 0x01
     WriteImage,
-    /// Update key image - MK2/XL/Plus uses 0x07
+    /// Update key image - MK2/XL/Plus/Neo uses 0x07
     UpdateKeyImage,
     /// Update full screen - MK2/XL uses 0x08
     UpdateFullScreen,
+    /// Update LCD info bar - Neo uses 0x0B for full 248x58 LCD fill
+    UpdateLcdInfoBar,
     /// Update LCD screen - Plus uses 0x0C for touchscreen strip
     UpdateLcdScreen,
     /// Unknown command
@@ -133,6 +135,7 @@ impl ImageCommand {
             ImageCommand::WriteImage => 0x01,
             ImageCommand::UpdateKeyImage => 0x07,
             ImageCommand::UpdateFullScreen => 0x08,
+            ImageCommand::UpdateLcdInfoBar => 0x0B,
             ImageCommand::UpdateLcdScreen => 0x0C,
             ImageCommand::Unknown(v) => *v,
         }
@@ -145,6 +148,7 @@ impl From<u8> for ImageCommand {
             0x01 => ImageCommand::WriteImage,
             0x07 => ImageCommand::UpdateKeyImage,
             0x08 => ImageCommand::UpdateFullScreen,
+            0x0B => ImageCommand::UpdateLcdInfoBar,
             0x0C => ImageCommand::UpdateLcdScreen,
             other => ImageCommand::Unknown(other),
         }
@@ -158,6 +162,8 @@ pub enum ImageProtocol {
     Module6,
     /// Module 15/32 (MK2/XL) protocol - 8-byte header
     Module15_32,
+    /// Neo LCD protocol - 8-byte header for info bar (same as Module15_32)
+    NeoLcd,
     /// Plus LCD protocol - 16-byte header for touchscreen
     PlusLcd,
 }
@@ -258,6 +264,43 @@ impl ImagePacketHeader {
                     lcd_height: 0,
                 })
             }
+            ImageCommand::UpdateLcdInfoBar => {
+                // Neo LCD protocol - 8 byte header for info bar (248x58)
+                // [0] Report ID (0x02)
+                // [1] Command (0x0B)
+                // [2] Reserved (0x00)
+                // [3] Final chunk flag: 0x00 = more, 0x01 = last
+                // [4-5] Payload length (u16 LE)
+                // [6-7] Chunk index (u16 LE, zero-based)
+                //
+                // Image is 248x58 JPEG, rotated 180°
+                let is_last = data[3] != 0;
+                let chunk_size = u16::from_le_bytes([data[4], data[5]]);
+                let page_number = u16::from_le_bytes([data[6], data[7]]);
+                
+                // Use key_index 254 for Neo LCD (distinct from Plus LCD at 255)
+                let key_index = 254;
+                
+                log::debug!(
+                    "Neo LCD packet: final={}, chunk={}, len={}",
+                    is_last, page_number, chunk_size
+                );
+                
+                Some(Self {
+                    report_id,
+                    command,
+                    page_number,
+                    is_last,
+                    key_index,
+                    chunk_size,
+                    protocol: ImageProtocol::NeoLcd,
+                    header_size: Self::SIZE_MK2_XL,  // Neo LCD uses 8-byte header
+                    lcd_x_offset: 0,
+                    lcd_y_offset: 0,
+                    lcd_width: 248,   // Neo info bar width
+                    lcd_height: 58,   // Neo info bar height
+                })
+            }
             ImageCommand::UpdateLcdScreen => {
                 // Plus LCD protocol - 16 byte header
                 // [0] Report ID (0x02)
@@ -338,11 +381,11 @@ impl ImagePacket {
         
         // Extract payload based on detected header size
         let payload = if data.len() > header.header_size {
-            // For MK2/XL and Plus LCD, only take chunk_size bytes of payload
+            // For MK2/XL, Neo LCD, and Plus LCD, only take chunk_size bytes of payload
             let payload_start = header.header_size;
             let payload_end = match header.protocol {
                 ImageProtocol::Module6 => data.len(),
-                ImageProtocol::Module15_32 | ImageProtocol::PlusLcd => {
+                ImageProtocol::Module15_32 | ImageProtocol::NeoLcd | ImageProtocol::PlusLcd => {
                     // Use the chunk_size field, but don't exceed available data
                     (payload_start + header.chunk_size as usize).min(data.len())
                 }
@@ -737,7 +780,8 @@ impl ImageStore {
                     image.validate();
                     
                     let image_size = image.len();
-                    let is_lcd = builder.protocol == Some(ImageProtocol::PlusLcd);
+                    let is_lcd = builder.protocol == Some(ImageProtocol::PlusLcd) 
+                              || builder.protocol == Some(ImageProtocol::NeoLcd);
                     let lcd_x_offset = builder.lcd_x_offset;
                     let lcd_y_offset = builder.lcd_y_offset;
                     let lcd_width = builder.lcd_width;
