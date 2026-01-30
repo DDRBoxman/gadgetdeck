@@ -12,7 +12,8 @@ Rust library and companion software to allow Raspberry Pi devices to show up as 
 * Stream Deck Mk2
 * Stream Deck XL
 * Stream Deck Pedal
-* Steam Deck Plus
+* Stream Deck Plus
+* Stream Deck Neo
 
 ## Gadgetdeck Library
 
