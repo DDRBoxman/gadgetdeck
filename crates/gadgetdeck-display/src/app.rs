@@ -1,6 +1,8 @@
 //! Main application state for gadgetdeck-display
 
-use gadgetdeck::{ButtonState, ImageEvent, KnobIndex, NeoInputState, PlusInputState, StreamDeckModel};
+use gadgetdeck::{
+    ButtonState, ImageEvent, KnobIndex, NeoInputState, PlusInputState, StreamDeckModel,
+};
 use raylib::prelude::*;
 use std::sync::Arc;
 
@@ -153,21 +155,22 @@ impl App {
         // Layout: [LED Button 8] [Info Bar LCD 248x58] [LED Button 9]
         let (info_bar, led_buttons) = if layout.has_info_bar {
             let info_bar_y = start_y + grid_height + 30; // Below buttons
-            
+
             // Scale the info bar to fit nicely on screen
             let scale_factor = 2.0; // Scale up the small 248x58 LCD
-            let info_bar_display_width = (layout.info_bar_width as f32 * scale_factor).min((screen_width - 200) as f32);
+            let info_bar_display_width =
+                (layout.info_bar_width as f32 * scale_factor).min((screen_width - 200) as f32);
             let info_bar_display_height = (layout.info_bar_height as f32 * scale_factor).min(120.0);
-            
+
             // LED buttons are on either side of the info bar
             let led_button_width = 60.0;
             let led_button_height = info_bar_display_height;
             let spacing = 15.0;
-            
+
             // Total width = led_button + spacing + info_bar + spacing + led_button
             let total_width = led_button_width * 2.0 + info_bar_display_width + spacing * 2.0;
             let start_x_centered = (screen_width as f32 - total_width) / 2.0;
-            
+
             // Left LED button (button 8)
             let left_led = LedButton::new(
                 start_x_centered,
@@ -176,7 +179,7 @@ impl App {
                 led_button_height,
                 8,
             );
-            
+
             // Info bar in the center
             let info_bar_x = start_x_centered + led_button_width + spacing;
             let info_bar = InfoBar::new(
@@ -185,7 +188,7 @@ impl App {
                 info_bar_display_width,
                 info_bar_display_height,
             );
-            
+
             // Right LED button (button 9)
             let right_led = LedButton::new(
                 info_bar_x + info_bar_display_width + spacing,
@@ -194,7 +197,7 @@ impl App {
                 led_button_height,
                 9,
             );
-            
+
             (Some(info_bar), vec![left_led, right_led])
         } else {
             (None, Vec::new())
@@ -476,7 +479,15 @@ impl App {
 
                 // Update touchscreen strip image segment (Plus)
                 if let Some(ref mut strip) = self.touchscreen {
-                    strip.update_image(rl, thread, image.as_bytes(), x_offset, y_offset, width, height);
+                    strip.update_image(
+                        rl,
+                        thread,
+                        image.as_bytes(),
+                        x_offset,
+                        y_offset,
+                        width,
+                        height,
+                    );
                     log::info!(
                         "Updated touchscreen image: x_off={}, y_off={}, {}x{}, {} bytes",
                         x_offset,
@@ -486,7 +497,7 @@ impl App {
                         image.len()
                     );
                 }
-                
+
                 // Update info bar LCD (Neo) - Neo receives full-screen updates (no offset)
                 if let Some(ref mut info_bar) = self.info_bar {
                     info_bar.update_image(rl, thread, image.as_bytes());
@@ -518,7 +529,7 @@ impl App {
         if let Some(ref strip) = self.touchscreen {
             strip.draw(d);
         }
-        
+
         // Draw info bar and LED buttons (for Neo)
         if let Some(ref info_bar) = self.info_bar {
             info_bar.draw(d);
@@ -534,14 +545,24 @@ impl App {
 
         // Draw status bar at bottom
         let status_y = self.screen_height - 40;
-        d.draw_rectangle(0, status_y, self.screen_width, 40, Color::new(30, 30, 30, 255));
+        d.draw_rectangle(
+            0,
+            status_y,
+            self.screen_width,
+            40,
+            Color::new(30, 30, 30, 255),
+        );
 
         // Status message
         d.draw_text(&self.status_msg, 20, status_y + 10, 20, Color::LIGHTGRAY);
 
         // Button/knob/LED button status on right
         let button_status = if let Some(led_idx) = self.last_led_button_pressed {
-            let label = if self.led_buttons[led_idx].index == 8 { "L" } else { "R" };
+            let label = if self.led_buttons[led_idx].index == 8 {
+                "L"
+            } else {
+                "R"
+            };
             format!("LED Button {} active", label)
         } else if let Some(knob_idx) = self.last_knob_pressed {
             let label = ["A", "B", "C", "D"].get(knob_idx).unwrap_or(&"?");

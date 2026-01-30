@@ -2,8 +2,8 @@
 
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
     response::{Html, IntoResponse, Json},
@@ -25,7 +25,10 @@ pub async fn index_handler(State(state): State<AppState>) -> Html<String> {
     Html(
         INDEX_HTML
             .replace("{{KEY_COLS}}", &state.key_cols.to_string())
-            .replace("{{IMAGE_FORMAT}}", &state.model.image_format().to_lowercase()),
+            .replace(
+                "{{IMAGE_FORMAT}}",
+                &state.model.image_format().to_lowercase(),
+            ),
     )
 }
 
@@ -233,7 +236,7 @@ pub async fn click_button_handler(
 // ============================================================================
 
 use crate::state::SetLedColorRequest;
-use gadgetdeck::{RgbColor, NeoInputState};
+use gadgetdeck::{NeoInputState, RgbColor};
 
 /// Get LED color for a button (Neo buttons 8-9 only)
 pub async fn get_button_led_handler(
@@ -245,17 +248,20 @@ pub async fn get_button_led_handler(
     }
 
     match &state.neo_state {
-        Some(neo) => {
-            match neo.get_led_color(id) {
-                Some(color) => Json(serde_json::json!({
-                    "id": id,
-                    "r": color.r,
-                    "g": color.g,
-                    "b": color.b
-                })).into_response(),
-                None => (StatusCode::BAD_REQUEST, format!("Button {} does not have an LED", id)).into_response(),
-            }
-        }
+        Some(neo) => match neo.get_led_color(id) {
+            Some(color) => Json(serde_json::json!({
+                "id": id,
+                "r": color.r,
+                "g": color.g,
+                "b": color.b
+            }))
+            .into_response(),
+            None => (
+                StatusCode::BAD_REQUEST,
+                format!("Button {} does not have an LED", id),
+            )
+                .into_response(),
+        },
         None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
     }
 }
@@ -274,12 +280,20 @@ pub async fn set_button_led_handler(
         Some(neo) => {
             let color = RgbColor::new(req.r, req.g, req.b);
             if neo.set_led_color(id, color) {
-                (StatusCode::OK, format!(
-                    "Button {} LED set to RGB({}, {}, {})",
-                    id, req.r, req.g, req.b
-                )).into_response()
+                (
+                    StatusCode::OK,
+                    format!(
+                        "Button {} LED set to RGB({}, {}, {})",
+                        id, req.r, req.g, req.b
+                    ),
+                )
+                    .into_response()
             } else {
-                (StatusCode::BAD_REQUEST, format!("Button {} does not have an LED", id)).into_response()
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Button {} does not have an LED", id),
+                )
+                    .into_response()
             }
         }
         None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
@@ -306,12 +320,14 @@ pub async fn button_leds_handler(State(state): State<AppState>) -> impl IntoResp
             Json(serde_json::json!({
                 "available": true,
                 "leds": leds
-            })).into_response()
+            }))
+            .into_response()
         }
         None => Json(serde_json::json!({
             "available": false,
             "leds": []
-        })).into_response(),
+        }))
+        .into_response(),
     }
 }
 
@@ -379,10 +395,22 @@ pub async fn knobs_handler(State(state): State<AppState>) -> Json<KnobsResponse>
     let available = state.plus_state.is_some();
     let knobs = if available {
         vec![
-            KnobInfo { id: 0, name: "A".to_string() },
-            KnobInfo { id: 1, name: "B".to_string() },
-            KnobInfo { id: 2, name: "C".to_string() },
-            KnobInfo { id: 3, name: "D".to_string() },
+            KnobInfo {
+                id: 0,
+                name: "A".to_string(),
+            },
+            KnobInfo {
+                id: 1,
+                name: "B".to_string(),
+            },
+            KnobInfo {
+                id: 2,
+                name: "C".to_string(),
+            },
+            KnobInfo {
+                id: 3,
+                name: "D".to_string(),
+            },
         ]
     } else {
         Vec::new()
@@ -398,7 +426,7 @@ pub async fn press_knob_handler(
     if id > 3 {
         return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
     }
-    
+
     match &state.plus_state {
         Some(plus) => {
             plus.press_knob(KnobIndex::from(id));
@@ -416,7 +444,7 @@ pub async fn release_knob_handler(
     if id > 3 {
         return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
     }
-    
+
     match &state.plus_state {
         Some(plus) => {
             plus.release_knob(KnobIndex::from(id));
@@ -434,7 +462,7 @@ pub async fn click_knob_handler(
     if id > 3 {
         return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
     }
-    
+
     match &state.plus_state {
         Some(plus) => {
             let plus = plus.clone();
@@ -460,12 +488,20 @@ pub async fn turn_knob_handler(
     if id > 3 {
         return (StatusCode::NOT_FOUND, "Knob not found (0-3)").into_response();
     }
-    
+
     match &state.plus_state {
         Some(plus) => {
             plus.turn_knob(KnobIndex::from(id), req.steps);
-            let direction = if req.steps > 0 { "clockwise" } else { "counter-clockwise" };
-            (StatusCode::OK, format!("Knob {} turned {} {} steps", id, direction, req.steps.abs())).into_response()
+            let direction = if req.steps > 0 {
+                "clockwise"
+            } else {
+                "counter-clockwise"
+            };
+            (
+                StatusCode::OK,
+                format!("Knob {} turned {} {} steps", id, direction, req.steps.abs()),
+            )
+                .into_response()
         }
         None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
     }
@@ -497,10 +533,14 @@ pub async fn lcd_swipe_handler(
     match &state.plus_state {
         Some(plus) => {
             plus.swipe(req.start_x, req.start_y, req.end_x, req.end_y);
-            (StatusCode::OK, format!(
-                "LCD swipe from ({}, {}) to ({}, {})",
-                req.start_x, req.start_y, req.end_x, req.end_y
-            )).into_response()
+            (
+                StatusCode::OK,
+                format!(
+                    "LCD swipe from ({}, {}) to ({}, {})",
+                    req.start_x, req.start_y, req.end_x, req.end_y
+                ),
+            )
+                .into_response()
         }
         None => (StatusCode::BAD_REQUEST, "Not a Plus device").into_response(),
     }

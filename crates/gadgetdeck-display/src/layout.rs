@@ -48,7 +48,7 @@ impl DeviceLayout {
         let button_count = model.key_count() as usize;
         let (img_w, _img_h) = model.key_image_size();
         let image_size = img_w as i32;
-        
+
         // Plus-specific features
         let is_plus = matches!(model, StreamDeckModel::Plus);
         let has_knobs = is_plus;
@@ -56,7 +56,7 @@ impl DeviceLayout {
         let has_touchscreen = is_plus;
         let touchscreen_width = if is_plus { 800 } else { 0 };
         let touchscreen_height = if is_plus { 100 } else { 0 };
-        
+
         // Neo-specific features
         let is_neo = matches!(model, StreamDeckModel::Neo);
         let has_info_bar = is_neo;
@@ -64,26 +64,27 @@ impl DeviceLayout {
         let info_bar_height = if is_neo { 58 } else { 0 };
         let has_led_buttons = is_neo;
         let led_button_count = if is_neo { 2 } else { 0 };
-        
+
         // Calculate optimal button size based on screen dimensions and grid
         // Leave some margin for spacing and status bar
         // For Plus, also reserve space for knobs below buttons and touchscreen at bottom
         // For Neo, reserve space for info bar with LED buttons
-        let knob_area_height = if has_knobs { 120 } else { 0 };  // Space for knob UI
-        let touchscreen_area_height = if has_touchscreen { 120 } else { 0 };  // Space for touchscreen strip
-        let info_bar_area_height = if has_info_bar { 100 } else { 0 };  // Space for info bar + LED buttons
-        
-        let available_width = screen_width - 100;  // 50px margin on each side
-        let available_height = screen_height - 140 - knob_area_height - touchscreen_area_height - info_bar_area_height; // 50px top, 40px status bar, 50px bottom
-        
+        let knob_area_height = if has_knobs { 120 } else { 0 }; // Space for knob UI
+        let touchscreen_area_height = if has_touchscreen { 120 } else { 0 }; // Space for touchscreen strip
+        let info_bar_area_height = if has_info_bar { 100 } else { 0 }; // Space for info bar + LED buttons
+
+        let available_width = screen_width - 100; // 50px margin on each side
+        let available_height =
+            screen_height - 140 - knob_area_height - touchscreen_area_height - info_bar_area_height; // 50px top, 40px status bar, 50px bottom
+
         // Calculate button size that fits the grid
         let max_button_width = (available_width - (cols as i32 - 1) * 30) / cols as i32;
         let max_button_height = (available_height - (rows as i32 - 1) * 30) / rows as i32;
-        
+
         // Use the smaller dimension to keep buttons square
         let button_size = max_button_width.min(max_button_height).min(200); // Cap at 200px
         let button_spacing = (button_size / 4).max(20).min(50); // Proportional spacing
-        
+
         Self {
             cols,
             rows,

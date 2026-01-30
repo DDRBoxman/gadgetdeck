@@ -3,14 +3,17 @@
 //! This module provides the `GadgetDeck` struct which wraps up all the
 //! initialization and thread management for emulating a Stream Deck device.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
-use usb_gadget::{default_udc, Config, Gadget, RegGadget};
+use usb_gadget::{Config, Gadget, RegGadget, default_udc};
 
 use crate::device::{ButtonState, ImageStore, NeoInputState, PlusInputState};
-use crate::usb::{CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver, run_plus_input_report_sender};
+use crate::usb::{
+    CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver,
+    run_plus_input_report_sender,
+};
 
 /// Error type for GadgetDeck operations
 #[derive(Debug)]
@@ -72,22 +75,22 @@ impl GadgetDeckConfig {
             serial: serial.into(),
         }
     }
-    
+
     /// Create a configuration for Stream Deck Mini with the given serial
     pub fn mini(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Mini, serial)
     }
-    
+
     /// Create a configuration for Stream Deck Pedal with the given serial
     pub fn pedal(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Pedal, serial)
     }
-    
+
     /// Create a configuration for Stream Deck Plus with the given serial
     pub fn plus(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Plus, serial)
     }
-    
+
     /// Create a configuration for Stream Deck Neo with the given serial
     pub fn neo(serial: impl Into<String>) -> Self {
         Self::new(StreamDeckModel::Neo, serial)
@@ -157,20 +160,19 @@ impl GadgetDeck {
     pub fn new(config: GadgetDeckConfig) -> Result<Self, GadgetDeckError> {
         let model = config.model;
         let serial = config.serial;
-        
+
         log::info!("Creating GadgetDeck: model={:?}, serial={}", model, serial);
-        
+
         // Create custom HID function using FunctionFS
         let (custom_hid, hid_handle) = CustomHid::build(model, serial.clone());
-        
+
         // Create configuration
-        let usb_config = Config::new("Configuration 1")
-            .with_function(hid_handle);
-        
+        let usb_config = Config::new("Configuration 1").with_function(hid_handle);
+
         // Find UDC
         let udc = default_udc().map_err(GadgetDeckError::NoUdc)?;
         log::info!("Found UDC: {:?}", udc);
-        
+
         // Build and bind the USB gadget
         let gadget_reg = Gadget::new(
             model.device_class(),
@@ -180,28 +182,28 @@ impl GadgetDeck {
         .with_config(usb_config)
         .bind(&udc)
         .map_err(GadgetDeckError::BindFailed)?;
-        
+
         log::info!("USB {} gadget registered!", model.product_name());
-        
+
         // Create shared state
         let running = Arc::new(AtomicBool::new(true));
         let button_state = ButtonState::new(model);
         let image_store = ImageStore::new();
-        
+
         // Create Plus-specific state if needed
         let plus_state = if model == StreamDeckModel::Plus {
             Some(PlusInputState::new())
         } else {
             None
         };
-        
+
         // Create Neo-specific state if needed
         let neo_state = if model == StreamDeckModel::Neo {
             Some(NeoInputState::new())
         } else {
             None
         };
-        
+
         Ok(Self {
             model,
             serial,
@@ -215,7 +217,7 @@ impl GadgetDeck {
             custom_hid: Some(custom_hid),
         })
     }
-    
+
     /// Start the USB gadget processing threads
     ///
     /// This spawns threads for:
@@ -226,15 +228,19 @@ impl GadgetDeck {
         if self.threads.is_some() {
             return Err(GadgetDeckError::AlreadyStarted);
         }
-        
-        let mut custom_hid = self.custom_hid.take()
+
+        let mut custom_hid = self
+            .custom_hid
+            .take()
             .ok_or(GadgetDeckError::AlreadyStarted)?;
-        
+
         // Take ownership of endpoints for separate threads
         let ep_in = custom_hid.take_ep_in().expect("EP IN should be available");
-        let ep_out = custom_hid.take_ep_out().expect("EP OUT should be available");
+        let ep_out = custom_hid
+            .take_ep_out()
+            .expect("EP OUT should be available");
         let ep_model = custom_hid.model();
-        
+
         // Spawn input report sender thread
         // Use Plus-specific sender for Plus model (handles touchscreen/knobs)
         let running_input = self.running.clone();
@@ -247,10 +253,10 @@ impl GadgetDeck {
             })
         } else {
             thread::spawn(move || {
-                run_input_report_sender(ep_in, ep_model, running_input, button_state_input);
+                run_input_report_sender(ep_in, running_input, button_state_input);
             })
         };
-        
+
         // Spawn output report receiver thread
         // For Pedal mode, we still need to drain the output endpoint even though there's no display
         // Otherwise the host may timeout waiting for the endpoint to be read
@@ -259,7 +265,7 @@ impl GadgetDeck {
         let output_thread = thread::spawn(move || {
             run_output_report_receiver(ep_out, ep_model, running_output, output_image_store);
         });
-        
+
         // Spawn USB control transfer event processing thread
         let running_event = self.running.clone();
         let event_thread = thread::spawn(move || {
@@ -271,64 +277,64 @@ impl GadgetDeck {
             }
             log::info!("USB event processing stopped");
         });
-        
+
         self.threads = Some(GadgetDeckThreads {
             input_thread,
             output_thread,
             event_thread,
         });
-        
+
         log::info!("GadgetDeck started");
         Ok(())
     }
-    
+
     /// Stop the GadgetDeck and wait for all threads to finish
     pub fn stop(&mut self) {
         log::info!("Stopping GadgetDeck...");
-        
+
         // Signal all threads to stop
         self.running.store(false, Ordering::SeqCst);
-        
+
         // Drop the gadget registration to trigger cleanup
         self.gadget_reg.take();
-        
+
         // Wait for threads to finish
         if let Some(threads) = self.threads.take() {
             let _ = threads.input_thread.join();
             let _ = threads.output_thread.join();
             let _ = threads.event_thread.join();
         }
-        
+
         log::info!("GadgetDeck stopped");
     }
-    
+
     /// Check if the GadgetDeck is still running
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
-    
+
     /// Signal the GadgetDeck to stop (non-blocking)
     ///
     /// Use `stop()` if you want to wait for threads to finish.
     pub fn signal_stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
-    
+
     /// Get a clone of the running flag for use in signal handlers
     pub fn running_flag(&self) -> Arc<AtomicBool> {
         self.running.clone()
     }
-    
+
     /// Get the Stream Deck model being emulated
     pub fn model(&self) -> StreamDeckModel {
         self.model
     }
-    
+
     /// Get the device serial number
     pub fn serial(&self) -> &str {
         &self.serial
     }
-    
+
     /// Get the button state manager
     ///
     /// Use this to read or update button states. Changes will be
@@ -336,7 +342,7 @@ impl GadgetDeck {
     pub fn button_state(&self) -> Arc<ButtonState> {
         self.button_state.clone()
     }
-    
+
     /// Get the Plus-specific input state (touchscreen/knobs)
     ///
     /// Returns `None` if not emulating a Stream Deck Plus.
@@ -361,7 +367,7 @@ impl GadgetDeck {
     pub fn plus_state(&self) -> Option<Arc<PlusInputState>> {
         self.plus_state.clone()
     }
-    
+
     /// Get the Neo-specific input state (button LEDs)
     ///
     /// Returns `None` if not emulating a Stream Deck Neo.
@@ -387,14 +393,14 @@ impl GadgetDeck {
     pub fn neo_state(&self) -> Option<Arc<NeoInputState>> {
         self.neo_state.clone()
     }
-    
+
     /// Get the image store
     ///
     /// Use this to access received button images.
     pub fn image_store(&self) -> ImageStore {
         self.image_store.clone()
     }
-    
+
     /// Subscribe to image update events
     ///
     /// Returns a receiver that will receive `ImageEvent` messages
@@ -413,32 +419,32 @@ impl Drop for GadgetDeck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_config_creation() {
         let config = GadgetDeckConfig::new(StreamDeckModel::Mini, "TEST123");
         assert_eq!(config.model, StreamDeckModel::Mini);
         assert_eq!(config.serial, "TEST123");
     }
-    
+
     #[test]
     fn test_config_mini() {
         let config = GadgetDeckConfig::mini("SERIAL");
         assert_eq!(config.model, StreamDeckModel::Mini);
     }
-    
+
     #[test]
     fn test_config_pedal() {
         let config = GadgetDeckConfig::pedal("SERIAL");
         assert_eq!(config.model, StreamDeckModel::Pedal);
     }
-    
+
     #[test]
     fn test_config_plus() {
         let config = GadgetDeckConfig::plus("SERIAL");
         assert_eq!(config.model, StreamDeckModel::Plus);
     }
-    
+
     #[test]
     fn test_config_neo() {
         let config = GadgetDeckConfig::neo("SERIAL");

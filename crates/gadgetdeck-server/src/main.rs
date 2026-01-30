@@ -1,7 +1,7 @@
 //! GadgetDeck Web Server Binary
 //!
 //! This binary sets up a USB gadget emulating a Stream Deck and provides
-//! a web interface for controlling it. It exposes REST APIs for button 
+//! a web interface for controlling it. It exposes REST APIs for button
 //! control and image management, as well as a simple web UI with WebSocket
 //! support for real-time image updates.
 
@@ -11,8 +11,8 @@ mod html;
 mod state;
 
 use axum::{
-    routing::{get, post},
     Router,
+    routing::{get, post},
 };
 use clap::Parser;
 use gadgetdeck::{GadgetDeck, GadgetDeckConfig, ImageEvent, StreamDeckModel};
@@ -35,27 +35,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Convert device type to model
     let model: StreamDeckModel = args.device.into();
-    let serial = args.serial
+    let serial = args
+        .serial
         .or_else(|| std::env::var("GADGETDECK_SERIAL").ok())
         .unwrap_or_else(|| "ZZZZZZZZZZZZZZ".to_string());
 
     // ========================================================================
     // Set up USB Gadget using GadgetDeck
     // ========================================================================
-    
+
     println!("🎛️  GadgetDeck Web Server");
     println!("   Setting up USB gadget...");
-    
+
     let config = GadgetDeckConfig::new(model, serial.clone());
     let mut deck = GadgetDeck::new(config)?;
-    
+
     println!("   USB {} gadget registered!", model.product_name());
     println!("   Serial: {}", serial);
-    
+
     // Start the USB processing threads
     deck.start()?;
     println!("   USB threads started");
-    
+
     // Get shared state from the deck
     let running = deck.running_flag();
     let button_state = deck.button_state();
@@ -67,13 +68,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================================
     // Set up Web Server
     // ========================================================================
-    
+
     // Create broadcast channel for WebSocket updates
     let (ws_tx, _) = broadcast::channel::<WsMessage>(32);
-    
+
     // Create LCD store for Plus/Neo models
     let lcd_store = LcdStore::new();
-    
+
     let (key_cols, _key_rows) = model.key_matrix();
     let state = AppState {
         button_state: button_state.clone(),
@@ -94,12 +95,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::task::spawn_blocking(move || {
         use base64::Engine;
         use std::time::Duration;
-        
+
         while watch_running.load(Ordering::Relaxed) {
             // Wait for image events with timeout so we can check running flag
             match image_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(ImageEvent::Updated { key_index, image }) => {
-                    let image_data = base64::engine::general_purpose::STANDARD.encode(image.as_bytes());
+                    let image_data =
+                        base64::engine::general_purpose::STANDARD.encode(image.as_bytes());
                     let update = WsMessage::ImageUpdate {
                         button_id: key_index,
                         image_data,
@@ -107,17 +109,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Ignore send errors (no subscribers)
                     let _ = watch_tx.send(update);
                 }
-                Ok(ImageEvent::LcdUpdated { x_offset, y_offset, width, height, image }) => {
+                Ok(ImageEvent::LcdUpdated {
+                    x_offset,
+                    y_offset,
+                    width,
+                    height,
+                    image,
+                }) => {
                     // LCD updates for Stream Deck Plus touchscreen
                     log::debug!(
                         "LCD image update: x_off={}, y_off={}, {}x{}, {} bytes",
-                        x_offset, y_offset, width, height, image.len()
+                        x_offset,
+                        y_offset,
+                        width,
+                        height,
+                        image.len()
                     );
-                    
+
                     // Store the segment for replay on new WebSocket connections
-                    watch_lcd_store.update(x_offset, y_offset, width, height, image.as_bytes().to_vec());
-                    
-                    let image_data = base64::engine::general_purpose::STANDARD.encode(image.as_bytes());
+                    watch_lcd_store.update(
+                        x_offset,
+                        y_offset,
+                        width,
+                        height,
+                        image.as_bytes().to_vec(),
+                    );
+
+                    let image_data =
+                        base64::engine::general_purpose::STANDARD.encode(image.as_bytes());
                     let update = WsMessage::LcdUpdate {
                         x_offset,
                         y_offset,
@@ -148,23 +167,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // API endpoints
         .route("/api/status", get(handlers::status_handler))
         .route("/api/buttons", get(handlers::buttons_handler))
-        .route("/api/buttons/{id}/press", post(handlers::press_button_handler))
-        .route("/api/buttons/{id}/release", post(handlers::release_button_handler))
-        .route("/api/buttons/{id}/click", post(handlers::click_button_handler))
+        .route(
+            "/api/buttons/{id}/press",
+            post(handlers::press_button_handler),
+        )
+        .route(
+            "/api/buttons/{id}/release",
+            post(handlers::release_button_handler),
+        )
+        .route(
+            "/api/buttons/{id}/click",
+            post(handlers::click_button_handler),
+        )
         .route("/api/images", get(handlers::images_handler))
         .route("/api/images/{id}", get(handlers::get_image_handler))
         // Plus-specific endpoints (knobs and touchscreen)
         .route("/api/knobs", get(handlers::knobs_handler))
         .route("/api/knobs/{id}/press", post(handlers::press_knob_handler))
-        .route("/api/knobs/{id}/release", post(handlers::release_knob_handler))
+        .route(
+            "/api/knobs/{id}/release",
+            post(handlers::release_knob_handler),
+        )
         .route("/api/knobs/{id}/click", post(handlers::click_knob_handler))
         .route("/api/knobs/{id}/turn", post(handlers::turn_knob_handler))
         .route("/api/lcd/tap", post(handlers::lcd_tap_handler))
         .route("/api/lcd/swipe", post(handlers::lcd_swipe_handler))
         // Neo-specific endpoints (button LEDs for buttons 8-9)
         .route("/api/buttons/leds", get(handlers::button_leds_handler))
-        .route("/api/buttons/{id}/led", get(handlers::get_button_led_handler))
-        .route("/api/buttons/{id}/led", post(handlers::set_button_led_handler))
+        .route(
+            "/api/buttons/{id}/led",
+            get(handlers::get_button_led_handler),
+        )
+        .route(
+            "/api/buttons/{id}/led",
+            post(handlers::set_button_led_handler),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -189,7 +226,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nStopping GadgetDeck...");
     deck.stop();
-    
+
     println!("Web server stopped.");
     Ok(())
 }

@@ -45,7 +45,7 @@
 //! ```ignore
 //! let store = ImageStore::new();
 //! let mut rx = store.subscribe();
-//! 
+//!
 //! // In another task/thread:
 //! while let Ok(event) = rx.recv() {
 //!     match event {
@@ -58,8 +58,8 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
 /// Event emitted when an image is updated
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ pub enum ImageEvent {
 }
 
 /// Receiver for image events
-/// 
+///
 /// This is returned by [`ImageStore::subscribe`] and can be used to receive
 /// notifications when images are updated.
 pub struct ImageEventReceiver {
@@ -106,7 +106,10 @@ impl ImageEventReceiver {
     }
 
     /// Receive with a timeout
-    pub fn recv_timeout(&self, timeout: std::time::Duration) -> Result<ImageEvent, mpsc::RecvTimeoutError> {
+    pub fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<ImageEvent, mpsc::RecvTimeoutError> {
         self.rx.recv_timeout(timeout)
     }
 }
@@ -210,10 +213,10 @@ impl ImagePacketHeader {
         if data.len() < Self::SIZE_MK2_XL {
             return None;
         }
-        
+
         let report_id = data[0];
         let command = ImageCommand::from(data[1]);
-        
+
         // Detect protocol based on command byte
         match command {
             ImageCommand::WriteImage => {
@@ -248,7 +251,7 @@ impl ImagePacketHeader {
                 let is_last = data[3] != 0;
                 let chunk_size = u16::from_le_bytes([data[4], data[5]]);
                 let page_number = u16::from_le_bytes([data[6], data[7]]);
-                
+
                 Some(Self {
                     report_id,
                     command,
@@ -277,15 +280,17 @@ impl ImagePacketHeader {
                 let is_last = data[3] != 0;
                 let chunk_size = u16::from_le_bytes([data[4], data[5]]);
                 let page_number = u16::from_le_bytes([data[6], data[7]]);
-                
+
                 // Use key_index 254 for Neo LCD (distinct from Plus LCD at 255)
                 let key_index = 254;
-                
+
                 log::debug!(
                     "Neo LCD packet: final={}, chunk={}, len={}",
-                    is_last, page_number, chunk_size
+                    is_last,
+                    page_number,
+                    chunk_size
                 );
-                
+
                 Some(Self {
                     report_id,
                     command,
@@ -294,11 +299,11 @@ impl ImagePacketHeader {
                     key_index,
                     chunk_size,
                     protocol: ImageProtocol::NeoLcd,
-                    header_size: Self::SIZE_MK2_XL,  // Neo LCD uses 8-byte header
+                    header_size: Self::SIZE_MK2_XL, // Neo LCD uses 8-byte header
                     lcd_x_offset: 0,
                     lcd_y_offset: 0,
-                    lcd_width: 248,   // Neo info bar width
-                    lcd_height: 58,   // Neo info bar height
+                    lcd_width: 248, // Neo info bar width
+                    lcd_height: 58, // Neo info bar height
                 })
             }
             ImageCommand::UpdateLcdScreen => {
@@ -323,25 +328,32 @@ impl ImagePacketHeader {
                 let is_last = data[10] != 0;
                 let page_number = u16::from_le_bytes([data[11], data[12]]);
                 let chunk_size = u16::from_le_bytes([data[13], data[14]]);
-                
+
                 // Use key_index 128+ for LCD segments to avoid conflict with button indices (0-31)
                 // Full screen (800 wide) uses 255, segments use 128 + unique ID based on position
                 // We include y_offset in the key to handle overlapping x regions with different y positions
-                let key_index = if lcd_width == 800 && lcd_height == 100 { 
-                    255 
-                } else { 
+                let key_index = if lcd_width == 800 && lcd_height == 100 {
+                    255
+                } else {
                     // Create unique key: 128 + segment (0-3) + (y_offset / 25) * 4
                     // This allows up to 4 y-bands per x-segment
                     let seg = (lcd_x_offset / 200) as u8;
                     let y_band = ((lcd_y_offset / 25) as u8).min(3);
                     128 + seg + y_band * 4
                 };
-                
+
                 log::debug!(
                     "LCD packet: x_off={}, y_off={}, w={}, h={}, final={}, chunk={}, len={}, key_idx={}",
-                    lcd_x_offset, lcd_y_offset, lcd_width, lcd_height, is_last, page_number, chunk_size, key_index
+                    lcd_x_offset,
+                    lcd_y_offset,
+                    lcd_width,
+                    lcd_height,
+                    is_last,
+                    page_number,
+                    chunk_size,
+                    key_index
                 );
-                
+
                 Some(Self {
                     report_id,
                     command,
@@ -378,7 +390,7 @@ impl ImagePacket {
     /// Parse a complete packet from raw output report data
     pub fn parse(data: &[u8]) -> Option<Self> {
         let header = ImagePacketHeader::parse(data)?;
-        
+
         // Extract payload based on detected header size
         let payload = if data.len() > header.header_size {
             // For MK2/XL, Neo LCD, and Plus LCD, only take chunk_size bytes of payload
@@ -510,7 +522,11 @@ impl std::fmt::Display for ImageError {
                 write!(f, "Packet too short: {} bytes", len)
             }
             ImageError::InvalidReportId { expected, got } => {
-                write!(f, "Invalid report ID: expected 0x{:02X}, got 0x{:02X}", expected, got)
+                write!(
+                    f,
+                    "Invalid report ID: expected 0x{:02X}, got 0x{:02X}",
+                    expected, got
+                )
             }
             ImageError::KeyMismatch { expected, got } => {
                 write!(f, "Key index mismatch: expected {}, got {}", expected, got)
@@ -550,33 +566,41 @@ impl ButtonImage {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
-    
+
     /// Validate the image data and log debug information
-    /// 
+    ///
     /// Returns true if the image appears valid (has proper magic bytes)
     pub fn validate(&self) -> bool {
         if self.data.len() < 2 {
-            log::warn!("Button {} image too short: {} bytes", self.key_index, self.data.len());
+            log::warn!(
+                "Button {} image too short: {} bytes",
+                self.key_index,
+                self.data.len()
+            );
             return false;
         }
-        
+
         // Check for JPEG magic bytes
         if self.data[0] == 0xFF && self.data[1] == 0xD8 {
             // Look for JPEG EOI marker (should be last 2 bytes)
             let len = self.data.len();
             if len >= 2 {
-                let last_two = &self.data[len-2..];
+                let last_two = &self.data[len - 2..];
                 if last_two[0] != 0xFF || last_two[1] != 0xD9 {
                     log::warn!(
                         "Button {} JPEG missing EOI marker: last 2 bytes are {:02X} {:02X} (expected FF D9)",
-                        self.key_index, last_two[0], last_two[1]
+                        self.key_index,
+                        last_two[0],
+                        last_two[1]
                     );
                     // Try to find the real EOI marker
-                    for i in (0..len-1).rev() {
-                        if self.data[i] == 0xFF && self.data[i+1] == 0xD9 {
+                    for i in (0..len - 1).rev() {
+                        if self.data[i] == 0xFF && self.data[i + 1] == 0xD9 {
                             log::warn!(
                                 "Button {} found EOI at offset {}, image has {} extra bytes after EOI",
-                                self.key_index, i, len - i - 2
+                                self.key_index,
+                                i,
+                                len - i - 2
                             );
                             break;
                         }
@@ -584,42 +608,56 @@ impl ButtonImage {
                     return false;
                 }
             }
-            log::debug!("Button {} JPEG valid: {} bytes", self.key_index, self.data.len());
+            log::debug!(
+                "Button {} JPEG valid: {} bytes",
+                self.key_index,
+                self.data.len()
+            );
             return true;
         }
-        
+
         // Check for BMP magic bytes
         if self.data[0] == b'B' && self.data[1] == b'M' {
-            log::debug!("Button {} BMP valid: {} bytes", self.key_index, self.data.len());
+            log::debug!(
+                "Button {} BMP valid: {} bytes",
+                self.key_index,
+                self.data.len()
+            );
             return true;
         }
-        
+
         log::warn!(
             "Button {} unknown format: first bytes {:02X} {:02X}",
-            self.key_index, self.data[0], self.data[1]
+            self.key_index,
+            self.data[0],
+            self.data[1]
         );
         false
     }
 
     /// Save the image to a file for debugging
-    /// 
+    ///
     /// The image is saved as a BMP file (since Stream Deck Mini uses BMP format).
     pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
         use std::io::Write;
         let mut file = std::fs::File::create(path)?;
         file.write_all(&self.data)?;
-        log::debug!("Saved debug image to {:?} ({} bytes)", path, self.data.len());
+        log::debug!(
+            "Saved debug image to {:?} ({} bytes)",
+            path,
+            self.data.len()
+        );
         Ok(())
     }
 }
 
 /// Thread-safe store for button images
-/// 
+///
 /// This store receives image packets, accumulates multi-packet images,
 /// and stores completed images for each button.
-/// 
+///
 /// ## Subscribing to Events
-/// 
+///
 /// Use [`ImageStore::subscribe`] to receive notifications when images are updated.
 /// Multiple subscribers are supported.
 #[derive(Clone)]
@@ -665,10 +703,10 @@ impl ImageStore {
     }
 
     /// Subscribe to image update events
-    /// 
+    ///
     /// Returns a receiver that will receive [`ImageEvent`] notifications
     /// whenever an image is updated. Multiple subscribers are supported.
-    /// 
+    ///
     /// The channel is unbounded, so subscribers should process events
     /// promptly to avoid memory buildup.
     pub fn subscribe(&self) -> ImageEventReceiver {
@@ -679,7 +717,7 @@ impl ImageStore {
     }
 
     /// Process an incoming output report packet
-    /// 
+    ///
     /// Returns Ok(Some(key_index)) if an image was completed,
     /// Ok(None) if more packets are needed,
     /// Err if there was a parsing or protocol error.
@@ -691,12 +729,15 @@ impl ImageStore {
 
         // Verify this is an image report
         if data[0] != 0x02 {
-            return Err(ImageError::InvalidReportId { expected: 0x02, got: data[0] });
+            return Err(ImageError::InvalidReportId {
+                expected: 0x02,
+                got: data[0],
+            });
         }
 
-        let packet = ImagePacket::parse(data)
-            .ok_or(ImageError::PacketTooShort { len: data.len() })?;
-        
+        let packet =
+            ImagePacket::parse(data).ok_or(ImageError::PacketTooShort { len: data.len() })?;
+
         // Log first packet of each image for debugging
         if packet.header.page_number == 0 {
             log::info!(
@@ -715,7 +756,8 @@ impl ImageStore {
         let key_index = packet.header.key_index;
 
         // Get or create builder for this key
-        let builder = inner.builders
+        let builder = inner
+            .builders
             .entry(key_index)
             .or_insert_with(|| ImageBuilder::new(key_index));
 
@@ -726,29 +768,30 @@ impl ImageStore {
 
         // Add packet to builder
         let add_result = builder.add_packet(&packet);
-        
+
         // Now we can access other fields of inner since we're done with builder
         match add_result {
             Ok(complete) => {
                 if complete {
                     // Get the builder again to take its data
                     let builder = inner.builders.get_mut(&key_index).unwrap();
-                    
+
                     // Image is complete, store it
                     // key_index is already 0-based (converted in header parsing)
                     let mut data = std::mem::take(&mut builder.data);
-                    
+
                     // For JPEG images, trim any data after the EOI marker
                     // This can happen if chunk_size includes padding bytes
                     if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
                         // Find the EOI marker (FF D9)
                         for i in (2..data.len().saturating_sub(1)).rev() {
-                            if data[i] == 0xFF && data[i+1] == 0xD9 {
+                            if data[i] == 0xFF && data[i + 1] == 0xD9 {
                                 let valid_len = i + 2;
                                 if valid_len < data.len() {
                                     log::debug!(
                                         "Button {} trimming {} bytes after JPEG EOI",
-                                        key_index, data.len() - valid_len
+                                        key_index,
+                                        data.len() - valid_len
                                     );
                                     data.truncate(valid_len);
                                 }
@@ -756,37 +799,48 @@ impl ImageStore {
                             }
                         }
                     }
-                    
+
                     let image = ButtonImage {
                         key_index,
                         data,
                         received_at: std::time::Instant::now(),
                     };
-                    
+
                     // Validate the image data and log header bytes for debugging
-                    let header_hex: String = image.data.iter().take(16)
+                    let header_hex: String = image
+                        .data
+                        .iter()
+                        .take(16)
                         .map(|b| format!("{:02X}", b))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    let tail_hex: String = image.data.iter().rev().take(16).rev()
+                    let tail_hex: String = image
+                        .data
+                        .iter()
+                        .rev()
+                        .take(16)
+                        .rev()
                         .map(|b| format!("{:02X}", b))
                         .collect::<Vec<_>>()
                         .join(" ");
                     log::info!(
                         "Button {} image: {} bytes, head=[{}], tail=[{}]",
-                        key_index, image.data.len(), header_hex, tail_hex
+                        key_index,
+                        image.data.len(),
+                        header_hex,
+                        tail_hex
                     );
-                    
+
                     image.validate();
-                    
+
                     let image_size = image.len();
-                    let is_lcd = builder.protocol == Some(ImageProtocol::PlusLcd) 
-                              || builder.protocol == Some(ImageProtocol::NeoLcd);
+                    let is_lcd = builder.protocol == Some(ImageProtocol::PlusLcd)
+                        || builder.protocol == Some(ImageProtocol::NeoLcd);
                     let lcd_x_offset = builder.lcd_x_offset;
                     let lcd_y_offset = builder.lcd_y_offset;
                     let lcd_width = builder.lcd_width;
                     let lcd_height = builder.lcd_height;
-                    
+
                     // Notify subscribers with appropriate event type
                     let event = if is_lcd {
                         ImageEvent::LcdUpdated {
@@ -802,15 +856,20 @@ impl ImageStore {
                             image: image.clone(),
                         }
                     };
-                    inner.subscribers.retain(|tx| tx.send(event.clone()).is_ok());
-                    
+                    inner
+                        .subscribers
+                        .retain(|tx| tx.send(event.clone()).is_ok());
+
                     inner.images.insert(key_index, image);
                     inner.stats.images_completed += 1;
-                    
+
                     if is_lcd {
                         log::info!(
                             "LCD image complete: x_off={}, {}x{}, {} bytes",
-                            lcd_x_offset, lcd_width, lcd_height, image_size
+                            lcd_x_offset,
+                            lcd_width,
+                            lcd_height,
+                            image_size
                         );
                     } else {
                         log::info!(
@@ -819,7 +878,7 @@ impl ImageStore {
                             image_size
                         );
                     }
-                    
+
                     Ok(Some(key_index))
                 } else {
                     log::debug!(
@@ -843,7 +902,7 @@ impl ImageStore {
     }
 
     /// Get a completed image for a button (0-based index)
-    /// 
+    ///
     /// All indices are 0-based. The protocol conversion happens internally
     /// when parsing packets.
     pub fn get_image(&self, key_index: u8) -> Option<ButtonImage> {
@@ -883,26 +942,36 @@ mod tests {
 
     /// Create a Mini-style test packet (16-byte header, command 0x01)
     /// key_index here is 1-based as the Mini protocol uses
-    fn make_mini_test_packet(key_index_1based: u8, page: u8, is_last: bool, payload: &[u8]) -> Vec<u8> {
+    fn make_mini_test_packet(
+        key_index_1based: u8,
+        page: u8,
+        is_last: bool,
+        payload: &[u8],
+    ) -> Vec<u8> {
         let mut data = vec![0u8; 16 + payload.len()];
-        data[0] = 0x02;     // Report ID
-        data[1] = 0x01;     // Command: write image (Mini)
-        data[2] = page;     // Page number
-        data[3] = 0x00;     // Reserved
+        data[0] = 0x02; // Report ID
+        data[1] = 0x01; // Command: write image (Mini)
+        data[2] = page; // Page number
+        data[3] = 0x00; // Reserved
         data[4] = if is_last { 1 } else { 0 };
-        data[5] = key_index_1based;  // 1-based key index
+        data[5] = key_index_1based; // 1-based key index
         // bytes 6-15 are padding zeros
         data[16..].copy_from_slice(payload);
         data
     }
-    
+
     /// Create a MK2/XL-style test packet (8-byte header, command 0x07)
     /// key_index is 0-based
-    fn make_mk2_test_packet(key_index: u8, chunk_index: u16, is_last: bool, payload: &[u8]) -> Vec<u8> {
+    fn make_mk2_test_packet(
+        key_index: u8,
+        chunk_index: u16,
+        is_last: bool,
+        payload: &[u8],
+    ) -> Vec<u8> {
         let mut data = vec![0u8; 8 + payload.len()];
-        data[0] = 0x02;     // Report ID
-        data[1] = 0x07;     // Command: update key image (MK2/XL)
-        data[2] = key_index;  // 0-based key index
+        data[0] = 0x02; // Report ID
+        data[1] = 0x07; // Command: update key image (MK2/XL)
+        data[2] = key_index; // 0-based key index
         data[3] = if is_last { 1 } else { 0 };
         // Chunk size (u16 LE)
         let chunk_size = payload.len() as u16;
@@ -919,25 +988,25 @@ mod tests {
     fn test_parse_mini_header() {
         let packet = make_mini_test_packet(3, 0, false, &[]);
         let header = ImagePacketHeader::parse(&packet).unwrap();
-        
+
         assert_eq!(header.report_id, 0x02);
         assert_eq!(header.command, ImageCommand::WriteImage);
         assert_eq!(header.page_number, 0);
         assert!(!header.is_last);
-        assert_eq!(header.key_index, 2);  // 3-1 = 2 (converted to 0-based)
+        assert_eq!(header.key_index, 2); // 3-1 = 2 (converted to 0-based)
         assert_eq!(header.protocol, ImageProtocol::Module6);
     }
-    
+
     #[test]
     fn test_parse_mk2_header() {
         let packet = make_mk2_test_packet(5, 0, true, &[0xFFu8; 100]);
         let header = ImagePacketHeader::parse(&packet).unwrap();
-        
+
         assert_eq!(header.report_id, 0x02);
         assert_eq!(header.command, ImageCommand::UpdateKeyImage);
         assert_eq!(header.page_number, 0);
         assert!(header.is_last);
-        assert_eq!(header.key_index, 5);  // Already 0-based
+        assert_eq!(header.key_index, 5); // Already 0-based
         assert_eq!(header.chunk_size, 100);
         assert_eq!(header.protocol, ImageProtocol::Module15_32);
     }
@@ -945,29 +1014,29 @@ mod tests {
     #[test]
     fn test_single_packet_image_mini() {
         let store = ImageStore::new();
-        
+
         let payload = vec![0xAB; 100];
         // Use 1-based key index 1 -> becomes 0-based 0
         let packet = make_mini_test_packet(1, 0, true, &payload);
-        
+
         let result = store.process_packet(&packet).unwrap();
-        assert_eq!(result, Some(0));  // Returns 0-based index
-        
+        assert_eq!(result, Some(0)); // Returns 0-based index
+
         let image = store.get_image(0).unwrap();
         assert_eq!(image.key_index, 0);
         assert_eq!(image.data, payload);
     }
-    
+
     #[test]
     fn test_single_packet_image_mk2() {
         let store = ImageStore::new();
-        
+
         let payload = vec![0xCD; 100];
         let packet = make_mk2_test_packet(5, 0, true, &payload);
-        
+
         let result = store.process_packet(&packet).unwrap();
         assert_eq!(result, Some(5));
-        
+
         let image = store.get_image(5).unwrap();
         assert_eq!(image.key_index, 5);
         assert_eq!(image.data, payload);
@@ -976,46 +1045,46 @@ mod tests {
     #[test]
     fn test_multi_packet_image_mini() {
         let store = ImageStore::new();
-        
+
         // First packet (key index 2 in 1-based = 1 in 0-based)
         let payload1 = vec![0x11; 1008];
         let packet1 = make_mini_test_packet(2, 0, false, &payload1);
         let result = store.process_packet(&packet1).unwrap();
         assert_eq!(result, None);
-        
+
         // Second packet
         let payload2 = vec![0x22; 1008];
         let packet2 = make_mini_test_packet(2, 1, false, &payload2);
         let result = store.process_packet(&packet2).unwrap();
         assert_eq!(result, None);
-        
+
         // Final packet
         let payload3 = vec![0x33; 500];
         let packet3 = make_mini_test_packet(2, 2, true, &payload3);
         let result = store.process_packet(&packet3).unwrap();
-        assert_eq!(result, Some(1));  // 0-based index
-        
+        assert_eq!(result, Some(1)); // 0-based index
+
         let image = store.get_image(1).unwrap();
         assert_eq!(image.key_index, 1);
         assert_eq!(image.len(), 1008 + 1008 + 500);
     }
-    
+
     #[test]
     fn test_multi_packet_image_mk2() {
         let store = ImageStore::new();
-        
+
         // First packet
         let payload1 = vec![0x11; 500];
         let packet1 = make_mk2_test_packet(3, 0, false, &payload1);
         let result = store.process_packet(&packet1).unwrap();
         assert_eq!(result, None);
-        
+
         // Final packet
         let payload2 = vec![0x22; 300];
         let packet2 = make_mk2_test_packet(3, 1, true, &payload2);
         let result = store.process_packet(&packet2).unwrap();
         assert_eq!(result, Some(3));
-        
+
         let image = store.get_image(3).unwrap();
         assert_eq!(image.key_index, 3);
         assert_eq!(image.len(), 500 + 300);
@@ -1024,25 +1093,25 @@ mod tests {
     #[test]
     fn test_page_sequence_error() {
         let store = ImageStore::new();
-        
+
         // First packet
         let packet1 = make_mini_test_packet(1, 0, false, &[0x11; 100]);
         store.process_packet(&packet1).unwrap();
-        
+
         // Skip page 1, send page 2
         let packet2 = make_mini_test_packet(1, 2, false, &[0x22; 100]);
         let result = store.process_packet(&packet2);
-        
+
         assert!(matches!(result, Err(ImageError::PageSequenceError { .. })));
     }
 
     #[test]
     fn test_stats() {
         let store = ImageStore::new();
-        
+
         let packet = make_mini_test_packet(1, 0, true, &[0xAB; 100]);
         store.process_packet(&packet).unwrap();
-        
+
         let stats = store.stats();
         assert_eq!(stats.packets_received, 1);
         assert_eq!(stats.images_completed, 1);

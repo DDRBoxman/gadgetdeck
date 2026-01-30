@@ -13,8 +13,8 @@
 //! Images are JPEG format, rotated 180° (upside down).
 //! Unlike the Plus, the Neo only supports full-screen LCD updates (no regions).
 
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Button indices that have LED capability on the Neo
 pub const NEO_LED_BUTTON_LEFT: u8 = 8;
@@ -61,7 +61,7 @@ impl RgbColor {
 }
 
 /// Thread-safe LED state for Stream Deck Neo
-/// 
+///
 /// This manages LED colors for buttons 8-9 (the buttons with RGB LED strips).
 /// Button press states are handled through ButtonState.
 #[derive(Debug)]
@@ -133,7 +133,7 @@ impl NeoInputState {
     }
 
     /// Set the LED color for a button (returns false if button has no LED)
-    /// 
+    ///
     /// Note: This only stores the color locally. The actual LED update
     /// is sent to the device via SET_REPORT command 0x06.
     pub fn set_led_color(&self, button: u8, color: RgbColor) -> bool {
@@ -141,7 +141,10 @@ impl NeoInputState {
             self.led_colors[idx].store(color);
             log::info!(
                 "Button {} LED color set to RGB({}, {}, {})",
-                button, color.r, color.g, color.b
+                button,
+                color.r,
+                color.g,
+                color.b
             );
             true
         } else {
@@ -151,7 +154,7 @@ impl NeoInputState {
 
     /// Build a SET_REPORT payload for button LED color (Report ID 0x03, Command 0x06)
     /// Returns None if the button has no LED.
-    /// 
+    ///
     /// Format per research:
     /// [0] Report ID (0x03)
     /// [1] Command (0x06)
@@ -162,9 +165,9 @@ impl NeoInputState {
     pub fn build_led_color_report(&self, button: u8) -> Option<Vec<u8>> {
         let color = self.get_led_color(button)?;
         let mut report = vec![0u8; 32];
-        report[0] = 0x03;  // Report ID
-        report[1] = 0x06;  // Command: set LED color
-        report[2] = button;  // Button index (8 or 9)
+        report[0] = 0x03; // Report ID
+        report[1] = 0x06; // Command: set LED color
+        report[2] = button; // Button index (8 or 9)
         report[3] = color.r;
         report[4] = color.g;
         report[5] = color.b;
@@ -254,12 +257,12 @@ mod tests {
         state.set_led_color(9, RgbColor::new(100, 150, 200));
 
         let report = state.build_led_color_report(9).unwrap();
-        assert_eq!(report[0], 0x03);  // Report ID
-        assert_eq!(report[1], 0x06);  // Command
-        assert_eq!(report[2], 9);     // Button index
-        assert_eq!(report[3], 100);   // Red
-        assert_eq!(report[4], 150);   // Green
-        assert_eq!(report[5], 200);   // Blue
+        assert_eq!(report[0], 0x03); // Report ID
+        assert_eq!(report[1], 0x06); // Command
+        assert_eq!(report[2], 9); // Button index
+        assert_eq!(report[3], 100); // Red
+        assert_eq!(report[4], 150); // Green
+        assert_eq!(report[5], 200); // Blue
 
         // Non-LED button returns None
         assert!(state.build_led_color_report(0).is_none());

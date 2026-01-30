@@ -31,8 +31,8 @@ impl StreamDeckModel {
         match self {
             StreamDeckModel::Mini => 0x0063,
             StreamDeckModel::Pedal => 0x0086,
-            StreamDeckModel::Mk2 => 0x00B9,   // Module 15
-            StreamDeckModel::Xl => 0x00BA,    // Module 32
+            StreamDeckModel::Mk2 => 0x00B9, // Module 15
+            StreamDeckModel::Xl => 0x00BA,  // Module 32
             StreamDeckModel::Plus => 0x0084,
             StreamDeckModel::Neo => 0x009A,
         }
@@ -57,14 +57,7 @@ impl StreamDeckModel {
 
     /// Returns the USB device class (0 = defined at interface level)
     pub fn device_class(&self) -> Class {
-        match self {
-            StreamDeckModel::Mini => Class::new(0, 0, 0),
-            StreamDeckModel::Pedal => Class::new(0, 0, 0),
-            StreamDeckModel::Mk2 => Class::new(0, 0, 0),
-            StreamDeckModel::Xl => Class::new(0, 0, 0),
-            StreamDeckModel::Plus => Class::new(0, 0, 0),
-            StreamDeckModel::Neo => Class::new(0, 0, 0),
-        }
+        Class::new(0, 0, 0)
     }
 
     /// Returns the USB strings (manufacturer, product, serial)
@@ -74,26 +67,24 @@ impl StreamDeckModel {
 
     /// Returns the bcdDevice (device version) - 1.10 = 0x0110
     pub fn bcd_device(&self) -> u16 {
+        0x0110
+    }
+
+    /// Returns the number of buttons for this model
+    pub fn num_buttons(&self) -> u8 {
         match self {
-            StreamDeckModel::Mini => 0x0110,
-            StreamDeckModel::Pedal => 0x0100,
-            StreamDeckModel::Mk2 => 0x0100,
-            StreamDeckModel::Xl => 0x0100,
-            StreamDeckModel::Plus => 0x0100,
-            StreamDeckModel::Neo => 0x0100,
+            StreamDeckModel::Mini => 6,
+            StreamDeckModel::Pedal => 3,
+            StreamDeckModel::Mk2 => 15,
+            StreamDeckModel::Xl => 32,
+            StreamDeckModel::Plus => 8,
+            StreamDeckModel::Neo => 10, // 8 keys + 2 touch points
         }
     }
 
     /// Returns the max packet size for EP0
     pub fn max_packet_size0(&self) -> u8 {
-        match self {
-            StreamDeckModel::Mini => 64,
-            StreamDeckModel::Pedal => 64,
-            StreamDeckModel::Mk2 => 64,
-            StreamDeckModel::Xl => 64,
-            StreamDeckModel::Plus => 64,
-            StreamDeckModel::Neo => 64,
-        }
+        64
     }
 
     /// Returns the max power in mA
@@ -142,7 +133,7 @@ impl StreamDeckModel {
                 report_len: 17,
             },
             StreamDeckModel::Pedal => StreamDeckHidConfig {
-                protocol: 0,  // HID_PROTOCOL_REPORT
+                protocol: 0, // HID_PROTOCOL_REPORT
                 sub_class: 0,
                 in_max_packet_size: 64,
                 out_max_packet_size: 64,
@@ -151,35 +142,23 @@ impl StreamDeckModel {
                 // Report length is the max input report size (Report ID 1 = 7 bytes + 1 for report ID)
                 report_len: 8,
             },
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => StreamDeckHidConfig {
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo => StreamDeckHidConfig {
                 protocol: 0,
                 sub_class: 0,
-                in_max_packet_size: 512,   // Input report max 512 bytes per docs
-                out_max_packet_size: 1024, // Output report max 1024 bytes per docs
+                in_max_packet_size: 512,
+                out_max_packet_size: 1024,
                 interval: 1,
-                report_descriptor: Self::stream_deck_module_15_32_report_descriptor(),
-                // Report length: Input report has 4-byte header + payload
-                report_len: 32,  // Typical key state report size
+                report_descriptor: Self::stream_deck_modern_report_descriptor(),
+                report_len: 32,
             },
             StreamDeckModel::Plus => StreamDeckHidConfig {
                 protocol: 0,
                 sub_class: 0,
-                in_max_packet_size: 512,   // Similar to MK2/XL
-                out_max_packet_size: 1024, // Output packets up to 1051 bytes per research
+                in_max_packet_size: 512,
+                out_max_packet_size: 1024,
                 interval: 1,
-                report_descriptor: Self::stream_deck_plus_report_descriptor(),
-                // Report length: 14 bytes for button input, 9 bytes for knob/touch input
+                report_descriptor: Self::stream_deck_modern_report_descriptor(),
                 report_len: 14,
-            },
-            StreamDeckModel::Neo => StreamDeckHidConfig {
-                protocol: 0,
-                sub_class: 0,
-                in_max_packet_size: 512,   // Similar to MK2/XL
-                out_max_packet_size: 1024, // Output packets 1024 bytes
-                interval: 1,
-                report_descriptor: Self::stream_deck_neo_report_descriptor(),
-                // Report length: 512 bytes like MK2/XL (8 keys + 2 touch points)
-                report_len: 32,
             },
         }
     }
@@ -189,213 +168,114 @@ impl StreamDeckModel {
     fn stream_deck_mini_report_descriptor() -> Vec<u8> {
         vec![
             // Usage Page (Consumer Devices)
-            0x05, 0x0C,
-            // Usage (Consumer Control)
-            0x09, 0x01,
-            // Collection (Application)
-            0xA1, 0x01,
-            //   Usage (Consumer Control)
-            0x09, 0x01,
-            //   Usage Page (Button)
-            0x05, 0x09,
-            //   Usage Minimum (1)
-            0x19, 0x01,
-            //   Usage Maximum (16)
-            0x29, 0x10,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (1) - Button input report
-            0x85, 0x01,
-            //   Input (Data, Variable, Absolute)
-            0x81, 0x02,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (1023)
-            0x96, 0xFF, 0x03,
-            //   Report ID (2) - Image output report
-            0x85, 0x02,
-            //   Output (Data, Variable, Absolute)
-            0x91, 0x02,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (31)
-            0x95, 0x1F,
-            //   Report ID (3) - Feature report
+            0x05, 0x0C, // Usage (Consumer Control)
+            0x09, 0x01, // Collection (Application)
+            0xA1, 0x01, //   Usage (Consumer Control)
+            0x09, 0x01, //   Usage Page (Button)
+            0x05, 0x09, //   Usage Minimum (1)
+            0x19, 0x01, //   Usage Maximum (16)
+            0x29, 0x10, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (1) - Button input report
+            0x85, 0x01, //   Input (Data, Variable, Absolute)
+            0x81, 0x02, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (1023)
+            0x96, 0xFF, 0x03, //   Report ID (2) - Image output report
+            0x85, 0x02, //   Output (Data, Variable, Absolute)
+            0x91, 0x02, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (31)
+            0x95, 0x1F, //   Report ID (3) - Feature report
             0x85, 0x03,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (4) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (4) - Feature report
             0x85, 0x04,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (5) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (5) - Feature report
             0x85, 0x05,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (7) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (7) - Feature report
             0x85, 0x07,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (11/0x0B) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (11/0x0B) - Feature report
             0x85, 0x0B,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (160/0xA0) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (160/0xA0) - Feature report
             0x85, 0xA0,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (161/0xA1) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (161/0xA1) - Feature report
             0x85, 0xA1,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (162/0xA2) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (162/0xA2) - Feature report
             0x85, 0xA2,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (16)
-            0x95, 0x10,
-            //   Report ID (163/0xA3) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (16)
+            0x95, 0x10, //   Report ID (163/0xA3) - Feature report
             0x85, 0xA3,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (31)
-            0x95, 0x1F,
-            //   Report ID (164/0xA4) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (31)
+            0x95, 0x1F, //   Report ID (164/0xA4) - Feature report
             0x85, 0xA4,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            //   Usage (Vendor Defined 0xFF00)
-            0x0A, 0x00, 0xFF,
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-            //   Report Count (31)
-            0x95, 0x1F,
-            //   Report ID (165/0xA5) - Feature report
+            0xB1, 0x04, //   Usage (Vendor Defined 0xFF00)
+            0x0A, 0x00, 0xFF, //   Logical Minimum (0)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report Count (31)
+            0x95, 0x1F, //   Report ID (165/0xA5) - Feature report
             0x85, 0xA5,
             //   Feature (Data, Variable, Absolute, No Wrap, Linear, No Preferred, No Null)
-            0xB1, 0x04,
-
-            // End Collection
+            0xB1, 0x04, // End Collection
             0xC0,
         ]
     }
@@ -405,526 +285,245 @@ impl StreamDeckModel {
     fn stream_deck_pedal_report_descriptor() -> Vec<u8> {
         vec![
             // Usage Page (Consumer Devices)
-            0x05, 0x0C,
-            // Usage (Consumer Control)
-            0x09, 0x01,
-            // Collection (Application)
-            0xA1, 0x01,
-
-            //   Usage Page (Vendor Defined 0xFF00) - 2 byte form
+            0x05, 0x0C, // Usage (Consumer Control)
+            0x09, 0x01, // Collection (Application)
+            0xA1, 0x01, //   Usage Page (Vendor Defined 0xFF00) - 2 byte form
             0x06, 0x00, 0xFF,
-
             //   Common field definition
             //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-
-            //   Report ID 2 - Output (1023 bytes)
-            0x96, 0xFF, 0x03,  // Report Count (1023)
-            0x85, 0x02,        // Report ID (2)
-            0x09, 0x01,        // Usage
-            0x91, 0x02,        // Output (Data, Variable, Absolute)
-
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
+            0x75, 0x08, //   Report ID 2 - Output (1023 bytes)
+            0x96, 0xFF, 0x03, // Report Count (1023)
+            0x85, 0x02, // Report ID (2)
+            0x09, 0x01, // Usage
+            0x91, 0x02, // Output (Data, Variable, Absolute)
             //   Report ID 1 - Input (7 bytes) - Pedal button states
-            0x95, 0x07,        // Report Count (7)
-            0x85, 0x01,        // Report ID (1)
-            0x09, 0x01,        // Usage
-            0x81, 0x02,        // Input (Data, Variable, Absolute)
-
+            0x95, 0x07, // Report Count (7)
+            0x85, 0x01, // Report ID (1)
+            0x09, 0x01, // Usage
+            0x81, 0x02, // Input (Data, Variable, Absolute)
             //   Report ID 3 - Feature (31 bytes)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x03,        // Report ID (3)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature (Data, Array, Relative)
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x03, // Report ID (3)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature (Data, Array, Relative)
             //   Report ID 6 - Feature (31 bytes) - Serial number
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x06,        // Report ID (6)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x06, // Report ID (6)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature
             //   Report ID 7 - Feature (31 bytes)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x07,        // Report ID (7)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x07, // Report ID (7)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature
             //   Report ID 5 - Feature (31 bytes) - Version info
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x05,        // Report ID (5)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x05, // Report ID (5)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature
             //   Report ID 4 - Feature (31 bytes)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x04,        // Report ID (4)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x04, // Report ID (4)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature
             //   Report ID 8 - Feature (31 bytes)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x08,        // Report ID (8)
-            0x09, 0x01,        // Usage
-            0xB1, 0x04,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x08, // Report ID (8)
+            0x09, 0x01, // Usage
+            0xB1, 0x04, // Feature
             // End Collection
             0xC0,
         ]
     }
 
-    /// Stream Deck Module 15/32 (MK2/XL) HID Report Descriptor
-    /// Based on Elgato official documentation for Module 15 and 32 Keys
-    /// 
-    /// Report structure:
+    /// Stream Deck Module 15/32/Plus/Neo HID Report Descriptor
+    /// Based on Elgato official documentation and reverse engineering research.
+    ///
+    /// This descriptor is shared by MK2, XL, Plus, and Neo models as they all use
+    /// the same report structure:
     /// - Input Report (0x01): 512 bytes max, [Report ID, Command, Payload Length (2 bytes), Payload]
     /// - Output Report (0x02): 1024 bytes max, [Report ID, Command, Payload]
-    /// - Feature Report (0x03): 32 bytes max, setters
-    /// - Feature Report Getters: 0x04 (LD version), 0x05 (AP2 version), 0x06 (serial), 0x07 (AP1 version), 0x08 (unit info), 0x0A (idle time)
-    fn stream_deck_module_15_32_report_descriptor() -> Vec<u8> {
+    /// - Feature Reports: 0x03 (setters), 0x04-0x08 (getters), 0x0A (idle time)
+    ///
+    /// Model-specific behavior is handled at the protocol level, not the descriptor level.
+    fn stream_deck_modern_report_descriptor() -> Vec<u8> {
         vec![
             // Usage Page (Consumer Devices)
-            0x05, 0x0C,
-            // Usage (Consumer Control)
-            0x09, 0x01,
-            // Collection (Application)
-            0xA1, 0x01,
-
-            //   Usage Page (Vendor Defined 0xFF00)
+            0x05, 0x0C, // Usage (Consumer Control)
+            0x09, 0x01, // Collection (Application)
+            0xA1, 0x01, //   Usage Page (Vendor Defined 0xFF00)
             0x06, 0x00, 0xFF,
-
             //   Common field definition
             //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
+            0x15, 0x00, //   Logical Maximum (255)
+            0x26, 0xFF, 0x00, //   Report Size (8)
             0x75, 0x08,
-
-            //   Report ID 1 - Input (511 bytes) - Key press state change
-            //   Format: [Report ID, Command, Payload Length (2 bytes), Key states...]
-            0x96, 0xFF, 0x01,  // Report Count (511)
-            0x85, 0x01,        // Report ID (1)
-            0x09, 0x01,        // Usage
-            0x81, 0x02,        // Input (Data, Variable, Absolute)
-
+            //   Report ID 1 - Input (511 bytes) - Key/Knob/Touch state
+            0x96, 0xFF, 0x01, // Report Count (511)
+            0x85, 0x01, // Report ID (1)
+            0x09, 0x01, // Usage
+            0x81, 0x02, // Input (Data, Variable, Absolute)
             //   Report ID 2 - Output (1023 bytes) - Image upload
-            //   Format: [Report ID, Command, Payload...]
-            0x96, 0xFF, 0x03,  // Report Count (1023)
-            0x85, 0x02,        // Report ID (2)
-            0x09, 0x01,        // Usage
-            0x91, 0x02,        // Output (Data, Variable, Absolute)
-
+            0x96, 0xFF, 0x03, // Report Count (1023)
+            0x85, 0x02, // Report ID (2)
+            0x09, 0x01, // Usage
+            0x91, 0x02, // Output (Data, Variable, Absolute)
             //   Report ID 3 - Feature (31 bytes) - Setters
-            //   Commands: 0x02 (show logo), 0x05 (fill LCD), 0x06 (fill key), 0x08 (brightness), 0x0D (sleep), 0x13 (background)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x03,        // Report ID (3)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature (Data, Variable, Absolute)
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x03, // Report ID (3)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature (Data, Variable, Absolute)
             //   Report ID 4 - Feature (31 bytes) - LD firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x04,        // Report ID (4)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x04, // Report ID (4)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             //   Report ID 5 - Feature (31 bytes) - AP2 (primary) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x05,        // Report ID (5)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x05, // Report ID (5)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             //   Report ID 6 - Feature (31 bytes) - Serial number
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x06,        // Report ID (6)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x06, // Report ID (6)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             //   Report ID 7 - Feature (31 bytes) - AP1 (backup) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x07,        // Report ID (7)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x07, // Report ID (7)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             //   Report ID 8 - Feature (31 bytes) - Unit information
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x08,        // Report ID (8)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x08, // Report ID (8)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             //   Report ID 10 (0x0A) - Feature (31 bytes) - Idle time before sleep
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x0A,        // Report ID (10)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            // End Collection
-            0xC0,
-        ]
-    }
-
-    /// Stream Deck Plus HID Report Descriptor
-    /// Based on reverse engineering research from Den Delimarsky
-    /// 
-    /// The Plus has:
-    /// - 8 buttons with 120x120 JPEG images
-    /// - 800x100 touchscreen
-    /// - 4 rotary encoders (knobs)
-    /// 
-    /// Input reports:
-    /// - Buttons: Report ID 0x01, [0x01, 0x00, 0x08, 0x00, buttons[8]...]
-    /// - Knobs: Report ID 0x01, [0x01, 0x03, 0x05, 0x00, is_turn, knob_a, knob_b, knob_c, knob_d]
-    /// - Touchscreen: Report ID 0x01, [0x01, 0x02, 0x0E, 0x00, 0x01, 0x01, x_lo, x_hi, y_lo, y_hi]
-    /// 
-    /// Output reports:
-    /// - Button images: Command 0x07, [0x02, 0x07, key_idx, final, len_lo, len_hi, chunk_lo, chunk_hi, data...]
-    /// - Screen images: Command 0x0C, [0x02, 0x0C, x_off_lo, x_off_hi, 0x00, 0x00, w_lo, w_hi, h_lo, h_hi, final, chunk_lo, chunk_hi, len_lo, len_hi, 0x00, data...]
-    fn stream_deck_plus_report_descriptor() -> Vec<u8> {
-        vec![
-            // Usage Page (Consumer Devices)
-            0x05, 0x0C,
-            // Usage (Consumer Control)
-            0x09, 0x01,
-            // Collection (Application)
-            0xA1, 0x01,
-
-            //   Usage Page (Vendor Defined 0xFF00)
-            0x06, 0x00, 0xFF,
-
-            //   Common field definition
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-
-            //   Report ID 1 - Input (511 bytes) - Button/Knob/Touch input
-            //   Format varies by event type (byte 1):
-            //   - Buttons: [Report ID, 0x00, num_buttons(8), 0x00, button_states...]
-            //   - Knobs: [Report ID, 0x03, 0x05, 0x00, is_turn, knob_values...]
-            //   - Touch: [Report ID, 0x02, 0x0E, 0x00, 0x01, 0x01, x_coord, y_coord]
-            0x96, 0xFF, 0x01,  // Report Count (511)
-            0x85, 0x01,        // Report ID (1)
-            0x09, 0x01,        // Usage
-            0x81, 0x02,        // Input (Data, Variable, Absolute)
-
-            //   Report ID 2 - Output (1023 bytes) - Image upload
-            //   Button images use command 0x07, screen images use command 0x0C
-            0x96, 0xFF, 0x03,  // Report Count (1023)
-            0x85, 0x02,        // Report ID (2)
-            0x09, 0x01,        // Usage
-            0x91, 0x02,        // Output (Data, Variable, Absolute)
-
-            //   Report ID 3 - Feature (31 bytes) - Setters (brightness, etc.)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x03,        // Report ID (3)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature (Data, Variable, Absolute)
-
-            //   Report ID 4 - Feature (31 bytes) - LD firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x04,        // Report ID (4)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 5 - Feature (31 bytes) - AP2 (primary) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x05,        // Report ID (5)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 6 - Feature (31 bytes) - Serial number
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x06,        // Report ID (6)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 7 - Feature (31 bytes) - AP1 (backup) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x07,        // Report ID (7)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 8 - Feature (31 bytes) - Unit information
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x08,        // Report ID (8)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 10 (0x0A) - Feature (31 bytes) - Idle time before sleep
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x0A,        // Report ID (10)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            // End Collection
-            0xC0,
-        ]
-    }
-
-    /// Stream Deck Neo HID Report Descriptor
-    /// Based on python-elgato-streamdeck and research
-    /// 
-    /// The Neo has:
-    /// - 8 buttons with 96x96 JPEG images (rotated 180°, like XL)
-    /// - 248x58 info bar LCD touchscreen (rotated 180°)
-    /// - 2 touch points (simple buttons, not encoders)
-    /// 
-    /// Uses same format as Module 15/32 with additions for touch points and LCD fill.
-    /// Button report includes both 8 keys and 2 touch points (10 elements total).
-    /// 
-    /// Input reports:
-    /// - Buttons + Touch Points: [Report ID, 0x00, payload_len_lo, payload_len_hi, states[10]...]
-    /// 
-    /// Output reports:
-    /// - Button images: Command 0x07, 96x96 JPEG rotated 180°
-    /// - LCD fill: Command 0x0B, 248x58 JPEG rotated 180°
-    /// 
-    /// Feature reports:
-    /// - 0x03: Setters (brightness, touch point LED color)
-    /// - 0x05: AP2 firmware version
-    /// - 0x06: Serial number
-    fn stream_deck_neo_report_descriptor() -> Vec<u8> {
-        vec![
-            // Usage Page (Consumer Devices)
-            0x05, 0x0C,
-            // Usage (Consumer Control)
-            0x09, 0x01,
-            // Collection (Application)
-            0xA1, 0x01,
-
-            //   Usage Page (Vendor Defined 0xFF00)
-            0x06, 0x00, 0xFF,
-
-            //   Common field definition
-            //   Logical Minimum (0)
-            0x15, 0x00,
-            //   Logical Maximum (255)
-            0x26, 0xFF, 0x00,
-            //   Report Size (8)
-            0x75, 0x08,
-
-            //   Report ID 1 - Input (511 bytes) - Button + Touch Point state
-            //   Format: [Report ID, Command(0x00), Payload Length (2 bytes), Key states(8), Touch Point states(2)]
-            0x96, 0xFF, 0x01,  // Report Count (511)
-            0x85, 0x01,        // Report ID (1)
-            0x09, 0x01,        // Usage
-            0x81, 0x02,        // Input (Data, Variable, Absolute)
-
-            //   Report ID 2 - Output (1023 bytes) - Image upload
-            //   Button images: Command 0x07
-            //   LCD fill: Command 0x0B
-            0x96, 0xFF, 0x03,  // Report Count (1023)
-            0x85, 0x02,        // Report ID (2)
-            0x09, 0x01,        // Usage
-            0x91, 0x02,        // Output (Data, Variable, Absolute)
-
-            //   Report ID 3 - Feature (31 bytes) - Setters
-            //   Commands: 0x02 (reset), 0x06 (touch point LED color), 0x08 (brightness)
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x03,        // Report ID (3)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature (Data, Variable, Absolute)
-
-            //   Report ID 4 - Feature (31 bytes) - LD firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x04,        // Report ID (4)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 5 - Feature (31 bytes) - AP2 (primary) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x05,        // Report ID (5)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 6 - Feature (31 bytes) - Serial number
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x06,        // Report ID (6)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 7 - Feature (31 bytes) - AP1 (backup) firmware version
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x07,        // Report ID (7)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 8 - Feature (31 bytes) - Unit information
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x08,        // Report ID (8)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
-            //   Report ID 10 (0x0A) - Feature (31 bytes) - Idle time before sleep
-            0x95, 0x1F,        // Report Count (31)
-            0x85, 0x0A,        // Report ID (10)
-            0x09, 0x01,        // Usage
-            0xB1, 0x02,        // Feature
-
+            0x95, 0x1F, // Report Count (31)
+            0x85, 0x0A, // Report ID (10)
+            0x09, 0x01, // Usage
+            0xB1, 0x02, // Feature
             // End Collection
             0xC0,
         ]
     }
 
     /// Returns the report ID used for version info
-    /// 
+    ///
     /// Based on Elgato official documentation:
     /// - Module 6: 0xA0 (LD), 0xA1 (AP2/Primary), 0xA2 (AP1/Backup)
     /// - Module 15/32: 0x04 (LD), 0x05 (AP2/Primary), 0x07 (AP1/Backup)
     pub fn version_report_id(&self) -> u8 {
         match self {
-            StreamDeckModel::Mini => 0xA1,  // Mini uses 0xA1 for AP2 (primary firmware) per Elgato docs
+            StreamDeckModel::Mini => 0xA1, // Mini uses 0xA1 for AP2 (primary firmware) per Elgato docs
             StreamDeckModel::Pedal => 0x05,
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus | StreamDeckModel::Neo => 0x05,  // Module 15/32/Plus/Neo use 0x05 for AP2 (primary)
+            StreamDeckModel::Mk2
+            | StreamDeckModel::Xl
+            | StreamDeckModel::Plus
+            | StreamDeckModel::Neo => 0x05, // Module 15/32/Plus/Neo use 0x05 for AP2 (primary)
         }
     }
 
     /// Returns the report ID used for serial number
-    /// 
+    ///
     /// Based on Elgato official documentation:
     /// - Module 6: Report ID 0x03
     /// - Module 15/32: Report ID 0x06
     pub fn serial_report_id(&self) -> u8 {
         match self {
-            StreamDeckModel::Mini => 0x03,  // Mini uses report 0x03 for serial per Elgato docs
+            StreamDeckModel::Mini => 0x03, // Mini uses report 0x03 for serial per Elgato docs
             StreamDeckModel::Pedal => 0x06,
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus | StreamDeckModel::Neo => 0x06,  // Module 15/32/Plus/Neo use 0x06 for serial
+            StreamDeckModel::Mk2
+            | StreamDeckModel::Xl
+            | StreamDeckModel::Plus
+            | StreamDeckModel::Neo => 0x06, // Module 15/32/Plus/Neo use 0x06 for serial
         }
     }
 
     /// Returns the version feature report data
-    /// For Mini (Module 6): Report ID 0xA1 (AP2), 32 bytes, version string at offset 5
-    /// For Pedal: Report ID 0x05, 32 bytes, version string at offset 6
-    /// For MK2/XL (Module 15/32): Report ID 0x05, 32 bytes, format [Report ID, Data Length, Checksum[4], Version String[8]]
-    /// 
+    ///
     /// Based on Elgato official documentation:
-    /// - Module 6: Response format is [Report ID, N/A[4], Version String ASCII[12]]
-    /// - Module 15/32: Response format is [Report ID, Data Length (0x0C), Checksum[4], Version String ASCII[8]]
+    /// - Module 6 (Mini): Report ID 0xA1, [Report ID, N/A[4], Version String ASCII[12]]
+    /// - Pedal: Report ID 0x05, version string at offset 6
+    /// - Module 15/32/Neo: Report ID 0x05, [Report ID, Data Length (0x0C), Checksum[4], Version String ASCII[8]]
+    /// - Plus: Report ID 0x05, version string at offset 5
     pub fn version_report(&self) -> Vec<u8> {
+        let mut report = vec![0u8; 32];
         match self {
             StreamDeckModel::Mini => {
-                // Mini (Module 6) version report is 32 bytes (feature report max size)
-                // Per Elgato docs: version string starts at offset 0x05
-                let mut report = vec![0u8; 32];
-                report[0] = 0xA1;  // Report ID for Mini
-                // Version string at offset 5, format like "1.0.170602"
-                let version = b"1.0.170602";  // Firmware version string
-                let copy_len = version.len().min(12);
-                report[5..5 + copy_len].copy_from_slice(&version[..copy_len]);
-                report
+                report[0] = 0xA1;
+                let version = b"1.0.170602";
+                report[5..5 + version.len()].copy_from_slice(version);
             }
             StreamDeckModel::Pedal => {
-                // Pedal version report is 32 bytes
-                // Based on python-elgato-streamdeck: version string starts at [6:]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x05;  // Report ID for Pedal
-                let version = b"1.0.0";  // Firmware version string
-                let copy_len = version.len().min(26);
-                report[6..6 + copy_len].copy_from_slice(&version[..copy_len]);
-                report
+                report[0] = 0x05;
+                let version = b"1.0.0";
+                report[6..6 + version.len()].copy_from_slice(version);
             }
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => {
-                // Module 15/32 version report is 32 bytes
-                // Per Elgato docs: [Report ID, Data Length (0x0C), Checksum[4], Version String ASCII[8]]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x05;  // Report ID for AP2 firmware version
-                report[1] = 0x0C;  // Data length
-                // Checksum at bytes 2-5 (can be zeros for emulation)
-                // Version string at offset 6, 8 bytes max
-                let version = b"1.0.0.0\0";  // Firmware version string
-                let copy_len = version.len().min(8);
-                report[6..6 + copy_len].copy_from_slice(&version[..copy_len]);
-                report
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo => {
+                // Module 15/32/Neo: [Report ID, Length, Checksum[4], Version String[8]]
+                report[0] = 0x05;
+                report[1] = 0x0C;
+                let version = b"1.0.0.0\0";
+                report[6..6 + version.len()].copy_from_slice(version);
             }
             StreamDeckModel::Plus => {
-                // Plus version report is 32 bytes
-                // Per den.dev research: version string at offset [5:]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x05;  // Report ID for AP2 firmware version
-                let version = b"1.0.0.0\0";  // Firmware version string
-                let copy_len = version.len().min(27);  // Max 27 bytes from offset 5
-                report[5..5 + copy_len].copy_from_slice(&version[..copy_len]);
-                report
-            }
-            StreamDeckModel::Neo => {
-                // Neo version report is 32 bytes
-                // Same format as MK2/XL: [Report ID, Length, Checksum[4], Version String ASCII[8]]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x05;  // Report ID for AP2 firmware version
-                report[1] = 0x0C;  // Data length
+                report[0] = 0x05;
                 let version = b"1.0.0.0\0";
-                let copy_len = version.len().min(8);
-                report[6..6 + copy_len].copy_from_slice(&version[..copy_len]);
-                report
+                report[5..5 + version.len()].copy_from_slice(version);
             }
         }
+        report
     }
 
     /// Returns the serial feature report data
-    /// 
+    ///
     /// Based on Elgato official documentation:
-    /// - Module 6: Report ID 0x03, Response: [Report ID, N/A[4], Serial Number String ASCII]
-    /// - Module 15/32: Report ID 0x06, Response: [Report ID, Data Length (0x0C or 0x0E), Serial Number String ASCII]
+    /// - Module 6 (Mini): Report ID 0x03, [Report ID, N/A[4], Serial Number String ASCII]
+    /// - Pedal: Report ID 0x06, serial at offset 2
+    /// - Module 15/32/Neo: Report ID 0x06, [Report ID, Data Length, Serial Number String ASCII]
+    /// - Plus: Report ID 0x06, serial at offset 5
     pub fn serial_report(&self, serial: &str) -> Vec<u8> {
+        let mut report = vec![0u8; 32];
+        let serial_bytes = serial.as_bytes();
         match self {
             StreamDeckModel::Mini => {
-                // Mini (Module 6) serial report is 32 bytes (feature report max size)
-                // Per Elgato docs: serial string starts at offset 0x05
-                let mut report = vec![0u8; 32];
-                report[0] = 0x03;  // Report ID for Mini serial
-                let serial_bytes = serial.as_bytes();
+                report[0] = 0x03;
                 let copy_len = serial_bytes.len().min(12);
                 report[5..5 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
-                report
             }
             StreamDeckModel::Pedal => {
-                // Pedal serial report is 32 bytes
-                // Based on python-elgato-streamdeck: serial string starts at [2:]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x06;  // Report ID for Pedal serial
-                let serial_bytes = serial.as_bytes();
+                report[0] = 0x06;
                 let copy_len = serial_bytes.len().min(30);
                 report[2..2 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
-                report
             }
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl => {
-                // Module 15/32 serial report is 32 bytes
-                // Per Elgato docs: [Report ID, Data Length (0x0C or 0x0E), Serial Number String ASCII]
-                // Serial number is 14 characters
-                let mut report = vec![0u8; 32];
-                report[0] = 0x06;  // Report ID for MK2/XL serial
-                let serial_bytes = serial.as_bytes();
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo => {
+                // Module 15/32/Neo: [Report ID, Length, Serial String ASCII]
+                report[0] = 0x06;
                 let copy_len = serial_bytes.len().min(14);
-                report[1] = copy_len as u8;  // Data length
+                report[1] = copy_len as u8;
                 report[2..2 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
-                report
             }
             StreamDeckModel::Plus => {
-                // Plus serial report is 32 bytes
-                // Per den.dev research: serial string at offset [5:]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x06;  // Report ID for Plus serial
-                let serial_bytes = serial.as_bytes();
-                let copy_len = serial_bytes.len().min(27);  // Max 27 bytes from offset 5
+                report[0] = 0x06;
+                let copy_len = serial_bytes.len().min(27);
                 report[5..5 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
-                report
-            }
-            StreamDeckModel::Neo => {
-                // Neo serial report is 32 bytes
-                // Same format as MK2/XL: [Report ID, Length, Serial String ASCII]
-                let mut report = vec![0u8; 32];
-                report[0] = 0x06;  // Report ID for Neo serial
-                let serial_bytes = serial.as_bytes();
-                let copy_len = serial_bytes.len().min(14);
-                report[1] = copy_len as u8;  // Data length
-                report[2..2 + copy_len].copy_from_slice(&serial_bytes[..copy_len]);
-                report
             }
         }
+        report
+    }
+
+    /// Creates a firmware version report with the standard format
+    /// Format: [Report ID, Data Length (0x0C), Checksum[4], Version String ASCII[8]]
+    fn make_firmware_report(report_id: u8) -> Vec<u8> {
+        let mut report = vec![0u8; 32];
+        report[0] = report_id;
+        report[1] = 0x0C;
+        let version = b"1.0.0.0\0";
+        report[6..6 + version.len()].copy_from_slice(version);
+        report
     }
 
     /// Handle a GET_REPORT request for a feature report
@@ -935,42 +534,24 @@ impl StreamDeckModel {
         } else if report_id == self.serial_report_id() {
             Some(self.serial_report(serial))
         } else if report_id == 0x08 {
-            // Unit information report (Module 15/32 only)
             self.unit_info_report()
         } else {
-            // Handle additional feature report IDs for MK2/XL/Plus/Neo
+            // Handle additional feature report IDs for modern models
             match self {
-                StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus | StreamDeckModel::Neo => {
-                    match report_id {
-                        0x04 => {
-                            // LD firmware version
-                            let mut report = vec![0u8; 32];
-                            report[0] = 0x04;
-                            report[1] = 0x0C;
-                            let version = b"1.0.0.0\0";
-                            report[6..6 + version.len()].copy_from_slice(version);
-                            Some(report)
-                        }
-                        0x07 => {
-                            // AP1 (backup) firmware version
-                            let mut report = vec![0u8; 32];
-                            report[0] = 0x07;
-                            report[1] = 0x0C;
-                            let version = b"1.0.0.0\0";
-                            report[6..6 + version.len()].copy_from_slice(version);
-                            Some(report)
-                        }
-                        0x0A => {
-                            // Idle time before sleep
-                            let mut report = vec![0u8; 32];
-                            report[0] = 0x0A;
-                            report[1] = 0x04;  // Data length
-                            // 0 seconds = sleep disabled
-                            Some(report)
-                        }
-                        _ => None,
+                StreamDeckModel::Mk2
+                | StreamDeckModel::Xl
+                | StreamDeckModel::Plus
+                | StreamDeckModel::Neo => match report_id {
+                    0x04 => Some(Self::make_firmware_report(0x04)), // LD firmware
+                    0x07 => Some(Self::make_firmware_report(0x07)), // AP1 (backup) firmware
+                    0x0A => {
+                        let mut report = vec![0u8; 32];
+                        report[0] = 0x0A;
+                        report[1] = 0x04;
+                        Some(report)
                     }
-                }
+                    _ => None,
+                },
                 _ => None,
             }
         }
@@ -992,25 +573,11 @@ pub struct ConfigAttributes {
 impl StreamDeckModel {
     /// Returns the configuration attributes for this model
     pub fn config_attributes(&self) -> ConfigAttributes {
-        match self {
-            StreamDeckModel::Mini => ConfigAttributes {
-                bus_powered: true,
-                remote_wakeup: true,
-                config_value: 1,
-                num_interfaces: 1,
-            },
-            StreamDeckModel::Pedal => ConfigAttributes {
-                bus_powered: true,
-                remote_wakeup: true,
-                config_value: 1,
-                num_interfaces: 1,
-            },
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus | StreamDeckModel::Neo => ConfigAttributes {
-                bus_powered: true,
-                remote_wakeup: true,
-                config_value: 1,
-                num_interfaces: 1,
-            },
+        ConfigAttributes {
+            bus_powered: true,
+            remote_wakeup: true,
+            config_value: 1,
+            num_interfaces: 1,
         }
     }
 
@@ -1042,11 +609,11 @@ impl StreamDeckModel {
     pub fn key_image_size(&self) -> (u16, u16) {
         match self {
             StreamDeckModel::Mini => (80, 80),
-            StreamDeckModel::Pedal => (0, 0),  // Pedal has no display
+            StreamDeckModel::Pedal => (0, 0), // Pedal has no display
             StreamDeckModel::Mk2 => (72, 72),
             StreamDeckModel::Xl => (96, 96),
             StreamDeckModel::Plus => (120, 120),
-            StreamDeckModel::Neo => (96, 96),  // Same as XL
+            StreamDeckModel::Neo => (96, 96),
         }
     }
 
@@ -1054,20 +621,23 @@ impl StreamDeckModel {
     pub fn lcd_size(&self) -> (u16, u16) {
         match self {
             StreamDeckModel::Mini => (320, 240),
-            StreamDeckModel::Pedal => (0, 0),  // Pedal has no display
+            StreamDeckModel::Pedal => (0, 0), // Pedal has no display
             StreamDeckModel::Mk2 => (480, 272),
             StreamDeckModel::Xl => (1024, 600),
-            StreamDeckModel::Plus => (800, 100),  // 800x240 for buttons (2 rows × 120px) + 800x100 touchscreen
-            StreamDeckModel::Neo => (248, 58),    // Info bar LCD
+            StreamDeckModel::Plus => (800, 100), // 800x240 for buttons (2 rows × 120px) + 800x100 touchscreen
+            StreamDeckModel::Neo => (248, 58),   // Info bar LCD
         }
     }
 
     /// Returns the image format for this model
     pub fn image_format(&self) -> &'static str {
         match self {
-            StreamDeckModel::Mini => "BMP",       // Module 6 uses BMP, rotated 90° clockwise
+            StreamDeckModel::Mini => "BMP", // Module 6 uses BMP, rotated 90° clockwise
             StreamDeckModel::Pedal => "NONE",
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Plus | StreamDeckModel::Neo => "JPEG",  // All newer models use JPEG
+            StreamDeckModel::Mk2
+            | StreamDeckModel::Xl
+            | StreamDeckModel::Plus
+            | StreamDeckModel::Neo => "JPEG", // All newer models use JPEG
         }
     }
 
@@ -1080,9 +650,9 @@ impl StreamDeckModel {
         match self {
             StreamDeckModel::Mk2 => {
                 let mut report = vec![0u8; 32];
-                report[0] = 0x08;  // Report ID
-                report[1] = 3;  // Rows
-                report[2] = 5;  // Columns
+                report[0] = 0x08; // Report ID
+                report[1] = 3; // Rows
+                report[2] = 5; // Columns
                 // Key width (72) as u16 LE
                 report[3] = 72;
                 report[4] = 0;
@@ -1103,9 +673,9 @@ impl StreamDeckModel {
             }
             StreamDeckModel::Xl => {
                 let mut report = vec![0u8; 32];
-                report[0] = 0x08;  // Report ID
-                report[1] = 4;  // Rows
-                report[2] = 8;  // Columns
+                report[0] = 0x08; // Report ID
+                report[1] = 4; // Rows
+                report[2] = 8; // Columns
                 // Key width (96) as u16 LE
                 report[3] = 96;
                 report[4] = 0;
@@ -1126,9 +696,9 @@ impl StreamDeckModel {
             }
             StreamDeckModel::Plus => {
                 let mut report = vec![0u8; 32];
-                report[0] = 0x08;  // Report ID
-                report[1] = 2;  // Rows
-                report[2] = 4;  // Columns
+                report[0] = 0x08; // Report ID
+                report[1] = 2; // Rows
+                report[2] = 4; // Columns
                 // Key width (120) as u16 LE
                 report[3] = 120;
                 report[4] = 0;
@@ -1149,9 +719,9 @@ impl StreamDeckModel {
             }
             StreamDeckModel::Neo => {
                 let mut report = vec![0u8; 32];
-                report[0] = 0x08;  // Report ID
-                report[1] = 2;  // Rows
-                report[2] = 4;  // Columns
+                report[0] = 0x08; // Report ID
+                report[1] = 2; // Rows
+                report[2] = 4; // Columns
                 // Key width (96) as u16 LE
                 report[3] = 96;
                 report[4] = 0;
@@ -1174,4 +744,3 @@ impl StreamDeckModel {
         }
     }
 }
-

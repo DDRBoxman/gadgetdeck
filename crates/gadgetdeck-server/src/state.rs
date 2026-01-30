@@ -3,8 +3,8 @@
 use gadgetdeck::{ButtonState, NeoInputState, PlusInputState, StreamDeckModel};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::broadcast;
 
 /// Message sent over WebSocket when an image updates
@@ -99,10 +99,20 @@ impl LcdStore {
     }
 
     /// Store or update an LCD segment
-    pub fn update(&self, x_offset: u16, y_offset: u16, width: u16, height: u16, image_data: Vec<u8>) {
+    pub fn update(
+        &self,
+        x_offset: u16,
+        y_offset: u16,
+        width: u16,
+        height: u16,
+        image_data: Vec<u8>,
+    ) {
         let mut segments = self.segments.write();
         // Find and update existing segment at this position, or add new one
-        if let Some(seg) = segments.iter_mut().find(|s| s.x_offset == x_offset && s.y_offset == y_offset) {
+        if let Some(seg) = segments
+            .iter_mut()
+            .find(|s| s.x_offset == x_offset && s.y_offset == y_offset)
+        {
             seg.width = width;
             seg.height = height;
             seg.image_data = image_data;
