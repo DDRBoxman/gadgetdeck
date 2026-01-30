@@ -34,6 +34,8 @@ pub enum DeviceType {
     Xl,
     /// Stream Deck Plus (8 keys, 4 knobs, touchscreen)
     Plus,
+    /// Stream Deck Neo (8 keys, 2 touch points, info bar LCD)
+    Neo,
 }
 
 impl From<DeviceType> for StreamDeckModel {
@@ -44,6 +46,7 @@ impl From<DeviceType> for StreamDeckModel {
             DeviceType::Mk2 => StreamDeckModel::Mk2,
             DeviceType::Xl => StreamDeckModel::Xl,
             DeviceType::Plus => StreamDeckModel::Plus,
+            DeviceType::Neo => StreamDeckModel::Neo,
         }
     }
 }

@@ -229,6 +229,93 @@ pub async fn click_button_handler(
 }
 
 // ============================================================================
+// Button LED API (Neo only - buttons 8-9 have RGB LEDs)
+// ============================================================================
+
+use crate::state::SetLedColorRequest;
+use gadgetdeck::{RgbColor, NeoInputState};
+
+/// Get LED color for a button (Neo buttons 8-9 only)
+pub async fn get_button_led_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+) -> impl IntoResponse {
+    if id >= state.button_state.num_buttons() {
+        return (StatusCode::NOT_FOUND, "Button not found").into_response();
+    }
+
+    match &state.neo_state {
+        Some(neo) => {
+            match neo.get_led_color(id) {
+                Some(color) => Json(serde_json::json!({
+                    "id": id,
+                    "r": color.r,
+                    "g": color.g,
+                    "b": color.b
+                })).into_response(),
+                None => (StatusCode::BAD_REQUEST, format!("Button {} does not have an LED", id)).into_response(),
+            }
+        }
+        None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
+    }
+}
+
+/// Set LED color for a button (Neo buttons 8-9 only)
+pub async fn set_button_led_handler(
+    State(state): State<AppState>,
+    Path(id): Path<u8>,
+    Json(req): Json<SetLedColorRequest>,
+) -> impl IntoResponse {
+    if id >= state.button_state.num_buttons() {
+        return (StatusCode::NOT_FOUND, "Button not found").into_response();
+    }
+
+    match &state.neo_state {
+        Some(neo) => {
+            let color = RgbColor::new(req.r, req.g, req.b);
+            if neo.set_led_color(id, color) {
+                (StatusCode::OK, format!(
+                    "Button {} LED set to RGB({}, {}, {})",
+                    id, req.r, req.g, req.b
+                )).into_response()
+            } else {
+                (StatusCode::BAD_REQUEST, format!("Button {} does not have an LED", id)).into_response()
+            }
+        }
+        None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
+    }
+}
+
+/// Get all buttons that have LEDs
+pub async fn button_leds_handler(State(state): State<AppState>) -> impl IntoResponse {
+    match &state.neo_state {
+        Some(neo) => {
+            let leds: Vec<_> = NeoInputState::led_buttons()
+                .iter()
+                .filter_map(|&id| {
+                    neo.get_led_color(id).map(|color| {
+                        serde_json::json!({
+                            "id": id,
+                            "r": color.r,
+                            "g": color.g,
+                            "b": color.b
+                        })
+                    })
+                })
+                .collect();
+            Json(serde_json::json!({
+                "available": true,
+                "leds": leds
+            })).into_response()
+        }
+        None => Json(serde_json::json!({
+            "available": false,
+            "leds": []
+        })).into_response(),
+    }
+}
+
+// ============================================================================
 // Image API
 // ============================================================================
 

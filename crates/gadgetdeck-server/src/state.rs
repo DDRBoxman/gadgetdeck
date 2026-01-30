@@ -1,6 +1,6 @@
 //! Application state and WebSocket message types
 
-use gadgetdeck::{ButtonState, PlusInputState, StreamDeckModel};
+use gadgetdeck::{ButtonState, NeoInputState, PlusInputState, StreamDeckModel};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
@@ -66,6 +66,14 @@ pub struct TurnKnobRequest {
     pub steps: i8,
 }
 
+/// Set LED color request body (for Neo button LEDs)
+#[derive(Clone, Deserialize)]
+pub struct SetLedColorRequest {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
 /// Stored LCD segment for replay on WebSocket connect
 #[derive(Clone)]
 pub struct LcdSegment {
@@ -128,6 +136,8 @@ pub struct AppState {
     pub ws_tx: broadcast::Sender<WsMessage>,
     /// Plus-specific input state (touchscreen/knobs) - only present for Plus model
     pub plus_state: Option<Arc<PlusInputState>>,
-    /// LCD segment store for Plus model
+    /// Neo-specific input state (touch point LEDs) - only present for Neo model
+    pub neo_state: Option<Arc<NeoInputState>>,
+    /// LCD segment store for Plus/Neo models
     pub lcd_store: LcdStore,
 }

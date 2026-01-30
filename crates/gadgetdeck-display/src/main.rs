@@ -31,6 +31,7 @@ mod app;
 mod button;
 mod cli;
 mod image;
+mod infobar;
 mod knob;
 mod layout;
 mod touchscreen;
@@ -61,6 +62,11 @@ fn main() {
     // Print Plus-specific info
     if matches!(model, StreamDeckModel::Plus) {
         println!("Plus features: 4 knobs, 800x100 touchscreen strip");
+    }
+    
+    // Print Neo-specific info
+    if matches!(model, StreamDeckModel::Neo) {
+        println!("Neo features: 2 LED buttons, 248x58 info bar LCD");
     }
     
     let serial = args.serial
@@ -102,6 +108,7 @@ fn main() {
     // Get shared state
     let button_state = deck.button_state();
     let plus_state = deck.plus_state();
+    let neo_state = deck.neo_state();
     let image_rx = deck.subscribe_images();
     
     // Initialize Raylib
@@ -119,7 +126,7 @@ fn main() {
     // Optionally hide cursor for embedded display
     // rl.hide_cursor();
     
-    let mut app = App::new(button_state, plus_state, model, args.width, args.height);
+    let mut app = App::new(button_state, plus_state, neo_state, model, args.width, args.height);
     
     println!("Display initialized. Touch buttons to interact.");
     println!("Connect Stream Deck software to send images.");

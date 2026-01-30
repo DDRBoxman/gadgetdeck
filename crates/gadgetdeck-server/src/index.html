@@ -87,6 +87,91 @@
         .image-format-jpeg.model-plus .button-image img {
             transform: none;
         }
+        /* Neo: JPEG rotated 180° like MK.2/XL */
+        .image-format-jpeg.model-neo .button-image img {
+            transform: rotate(180deg);
+        }
+        
+        /* Button LEDs section (Neo only) - now inside info bar */
+        .button-leds-section {
+            display: none;
+        }
+        .button-led-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .button-led {
+            width: 50px;
+            height: 30px;
+            border-radius: 15px;
+            background: linear-gradient(135deg, #3a3a4a 0%, #2a2a3a 100%);
+            border: 3px solid #555;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .button-led::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70%;
+            height: 70%;
+            border-radius: 8px;
+            background: var(--led-color, #222);
+            transition: background 0.2s;
+        }
+        .button-led:hover {
+            border-color: #00d4ff;
+        }
+        .button-led.pressed {
+            transform: scale(0.95);
+        }
+        
+        /* Info Bar LCD (Neo only) */
+        .infobar-section {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+        .infobar-section.visible { display: block; }
+        .infobar-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .infobar {
+            width: 232px;
+            height: 50px;
+            background: transparent;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .infobar canvas {
+            display: block;
+            /* Neo info bar is rotated 180° */
+            transform: rotate(180deg);
+        }
+        .infobar-label {
+            text-align: center;
+            color: #888;
+            font-size: 12px;
+            margin-top: 8px;
+        }
         
         /* LCD Touchscreen Strip (Plus only) */
         .lcd-section {
@@ -248,6 +333,29 @@
         <div class="knobs-section" id="knobs-section">
             <div class="knobs-grid" id="knobs"></div>
         </div>
+        
+        <!-- Info Bar LCD with LED Buttons (Neo only) -->
+        <div class="infobar-section" id="infobar-section">
+            <div class="infobar-container">
+                <div class="button-led-container" id="button-led-left">
+                    <div class="button-led" 
+                         id="button-led-8"
+                         style="--led-color: #222"
+                         onmousedown="pressButton(8)"
+                         onmouseup="releaseButton(8)"></div>
+                </div>
+                <div class="infobar" id="infobar">
+                    <canvas id="infobar-canvas" width="248" height="58"></canvas>
+                </div>
+                <div class="button-led-container" id="button-led-right">
+                    <div class="button-led" 
+                         id="button-led-9"
+                         style="--led-color: #222"
+                         onmousedown="pressButton(9)"
+                         onmouseup="releaseButton(9)"></div>
+                </div>
+            </div>
+        </div>
     </div>
     
     <div class="status-indicator" id="status-indicator">
@@ -261,9 +369,14 @@
         let lcdSegments = []; // Buffer LCD segment updates until canvas is ready
         let ws = null;
         let isPlus = false;
+        let isNeo = false;
         let lcdCanvas = null;
         let lcdCtx = null;
         let lcdReady = false;
+        let infobarCanvas = null;
+        let infobarCtx = null;
+        let infobarReady = false;
+        let infobarSegments = []; // Buffer infobar updates
         
         // Knob drag state
         let dragKnob = null;
@@ -274,6 +387,9 @@
         let lcdDragging = false;
         let lcdStartX = 0;
         let lcdStartY = 0;
+        
+        // Button press tracking
+        let activeButton = null;
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -294,12 +410,13 @@
                         buttonImages[msg.button_id] = msg.image_data;
                         // Update the specific button image
                         updateButtonImage(msg.button_id);
-                    } else if (msg.type === 'buttons') {
-                        // Update button states
-                        updateButtonsUI(msg.buttons);
                     } else if (msg.type === 'lcd') {
-                        // LCD segment update (Plus only)
-                        updateLcdSegment(msg);
+                        // LCD segment update (Plus or Neo)
+                        if (isNeo) {
+                            updateInfobarSegment(msg);
+                        } else {
+                            updateLcdSegment(msg);
+                        }
                     }
                 } catch (e) {
                     console.error('Failed to parse WebSocket message:', e);
@@ -363,6 +480,17 @@
                     initLcdCanvas();
                     fetchKnobs();
                 }
+                // Check if this is a Neo device
+                if (data.model && data.model.toLowerCase().includes('neo')) {
+                    isNeo = true;
+                    document.querySelector('.container').classList.add('model-neo');
+                    document.getElementById('infobar-section').classList.add('visible');
+                    initInfobarCanvas();
+                    fetchButtonLeds();
+                }
+                
+                // Initialize buttons UI
+                initButtonsUI();
             } catch (e) {
                 console.error('Failed to fetch status:', e);
             }
@@ -565,13 +693,54 @@
             await fetch(`/api/knobs/${id}/click`, { method: 'POST' });
         }
         
-        async function fetchButtons() {
+        // Neo info bar functions
+        function initInfobarCanvas() {
+            infobarCanvas = document.getElementById('infobar-canvas');
+            infobarCtx = infobarCanvas.getContext('2d');
+            infobarCtx.fillStyle = '#111';
+            infobarCtx.fillRect(0, 0, 248, 58);
+            infobarReady = true;
+            
+            // Process any buffered updates
+            while (infobarSegments.length > 0) {
+                const msg = infobarSegments.shift();
+                updateInfobarSegment(msg);
+            }
+        }
+        
+        function updateInfobarSegment(msg) {
+            // Buffer the update if canvas isn't ready yet
+            if (!infobarReady) {
+                infobarSegments.push(msg);
+                return;
+            }
+            
+            if (!infobarCtx) return;
+            
+            // Decode the base64 JPEG and draw it, cropping padding
+            const img = new Image();
+            img.onload = () => {
+                 infobarCtx.drawImage(img, 0, 0);
+            };
+            img.src = `data:image/jpeg;base64,${msg.image_data}`;
+        }
+        
+        // Neo button LED functions
+        async function fetchButtonLeds() {
             try {
-                const res = await fetch('/api/buttons');
+                const res = await fetch('/api/buttons/leds');
                 const data = await res.json();
-                updateButtonsUI(data.buttons);
+                if (data.available) {
+                    // Update LED colors on the button LED elements
+                    data.leds.forEach(led => {
+                        const ledEl = document.getElementById(`button-led-${led.id}`);
+                        if (ledEl) {
+                            ledEl.style.setProperty('--led-color', `rgb(${led.r}, ${led.g}, ${led.b})`);
+                        }
+                    });
+                }
             } catch (e) {
-                console.error('Failed to fetch buttons:', e);
+                console.error('Failed to fetch button LEDs:', e);
             }
         }
         
@@ -583,33 +752,61 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
         
-        function updateButtonsUI(buttons) {
+        function initButtonsUI() {
             const container = document.getElementById('buttons');
-            container.innerHTML = buttons.map(btn => {
-                const hasImage = buttonImages[btn.id];
+            // For Neo, buttons 8-9 are shown as LED buttons next to the info bar
+            const buttonCount = isNeo ? 8 : numButtons;
+            container.innerHTML = Array.from({ length: buttonCount }, (_, i) => {
+                const hasImage = buttonImages[i];
                 return `
-                <div class="button-card ${btn.pressed ? 'pressed' : ''}" 
-                     onmousedown="pressButton(${btn.id})" 
-                     onmouseup="releaseButton(${btn.id})"
-                     onmouseleave="releaseButton(${btn.id})">
+                <div class="button-card" 
+                     data-btn-id="${i}"
+                     onmousedown="pressButton(${i})" 
+                     onmouseup="releaseButton(${i})">
                     <div class="button-image">
-                        <img id="btn-img-${btn.id}" 
-                             src="${hasImage ? 'data:' + imageMimeType + ';base64,' + buttonImages[btn.id] : ''}" 
+                        <img id="btn-img-${i}" 
+                             src="${hasImage ? 'data:' + imageMimeType + ';base64,' + buttonImages[i] : ''}" 
                              style="${hasImage ? '' : 'display:none'}">
                     </div>
                 </div>
             `}).join('');
         }
         
-        async function pressButton(id) {
-            await fetch(`/api/buttons/${id}/press`, { method: 'POST' });
-            fetchButtons();
+        function pressButton(id) {
+            activeButton = id;
+            // Handle regular button cards
+            const card = document.querySelector(`.button-card[data-btn-id="${id}"]`);
+            card?.classList.add('pressed');
+            // Handle LED buttons (Neo buttons 8-9)
+            const ledBtn = document.getElementById(`button-led-${id}`);
+            ledBtn?.classList.add('pressed');
+            fetch(`/api/buttons/${id}/press`, { method: 'POST' });
         }
         
-        async function releaseButton(id) {
-            await fetch(`/api/buttons/${id}/release`, { method: 'POST' });
-            fetchButtons();
+        function releaseButton(id) {
+            if (activeButton !== id) return;
+            activeButton = null;
+            // Handle regular button cards
+            const card = document.querySelector(`.button-card[data-btn-id="${id}"]`);
+            card?.classList.remove('pressed');
+            // Handle LED buttons (Neo buttons 8-9)
+            const ledBtn = document.getElementById(`button-led-${id}`);
+            ledBtn?.classList.remove('pressed');
+            fetch(`/api/buttons/${id}/release`, { method: 'POST' });
         }
+        
+        // Global mouseup to release button if mouse leaves window
+        document.addEventListener('mouseup', () => {
+            if (activeButton !== null) {
+                const id = activeButton;
+                activeButton = null;
+                const card = document.querySelector(`.button-card[data-btn-id="${id}"]`);
+                card?.classList.remove('pressed');
+                const ledBtn = document.getElementById(`button-led-${id}`);
+                ledBtn?.classList.remove('pressed');
+                fetch(`/api/buttons/${id}/release`, { method: 'POST' });
+            }
+        });
         
         // Initial setup - initialize LCD canvas immediately so it's ready for updates
         initLcdCanvas();

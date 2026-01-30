@@ -19,6 +19,7 @@ GadgetDeck Server creates a USB gadget that appears to the host computer as a re
 | MK.2 | 15 | 5×3 | – |
 | XL | 32 | 8×4 | – |
 | Plus | 8 | 4×2 | 4 rotary knobs, LCD touchscreen |
+| Neo | 8+2 | 4×2 | 2 extra buttons with RGB LEDs, info bar LCD |
 | Pedal | 3 | 3×1 | Foot pedals (no display) |
 
 ## Installation
@@ -39,7 +40,7 @@ gadgetdeck-server [OPTIONS]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--device <TYPE>` | `-d` | `mini` | Device type to emulate: `mini`, `mk2`, `xl`, `plus`, `pedal` |
+| `--device <TYPE>` | `-d` | `mini` | Device type to emulate: `mini`, `mk2`, `xl`, `plus`, `neo`, `pedal` |
 | `--serial <STRING>` | `-s` | `ZZZZZZZZZZZZZZ` | USB serial number |
 | `--bind <ADDR>` | `-b` | `0.0.0.0:3000` | Web server bind address |
 
@@ -62,6 +63,9 @@ gadgetdeck-server --device xl --bind 0.0.0.0:8080
 
 # Emulate a Stream Deck Plus with custom serial
 gadgetdeck-server -d plus -s MY_SERIAL_123
+
+# Emulate a Stream Deck Neo
+gadgetdeck-server -d neo
 
 # Enable debug logging
 RUST_LOG=debug gadgetdeck-server
@@ -217,6 +221,52 @@ Simulate a swipe gesture on the LCD touchscreen.
 }
 ```
 
+### Button LEDs (Neo Only)
+
+Buttons 8 and 9 on the Neo have RGB LED strips that can be controlled.
+
+#### `GET /api/buttons/leds`
+
+Returns buttons that have LEDs and their current colors.
+
+**Response:**
+```json
+{
+  "available": true,
+  "leds": [
+    { "id": 8, "r": 255, "g": 0, "b": 0 },
+    { "id": 9, "r": 0, "g": 255, "b": 0 }
+  ]
+}
+```
+
+#### `GET /api/buttons/{id}/led`
+
+Get the current LED color for a button (only valid for buttons 8-9 on Neo).
+
+**Response:**
+```json
+{
+  "id": 8,
+  "r": 255,
+  "g": 128,
+  "b": 0
+}
+```
+
+#### `POST /api/buttons/{id}/led`
+
+Set the LED color for a button (only valid for buttons 8-9 on Neo).
+
+**Request Body:**
+```json
+{
+  "r": 255,
+  "g": 128,
+  "b": 0
+}
+```
+
 ## WebSocket
 
 Connect to `ws://<host>:3000/ws` for real-time updates.
@@ -283,12 +333,12 @@ After that, updates are pushed as they occur.
 │                      GadgetDeck Server                       │
 │  ┌──────────────────────────┴───────────────────────────┐   │
 │  │                   USB Gadget                         │   │
-│  │   (Emulates Stream Deck Mini/MK.2/XL/Plus/Pedal)    │   │
+│  │   (Emulates Stream Deck Mini/MK.2/XL/Plus/Neo/Pedal) │   │
 │  └──────────────────────────┬───────────────────────────┘   │
 │                              │                               │
-│  ┌───────────────────┐  ┌───┴───────────┐  ┌─────────────┐  │
-│  │   Button State    │  │  Image Store  │  │  Plus State │  │
-│  └───────────────────┘  └───────────────┘  └─────────────┘  │
+│  ┌─────────────┐  ┌─────────┴─────┐  ┌──────────────────┐   │
+│  │Button State │  │ Image Store   │  │ Plus/Neo State   │   │
+│  └─────────────┘  └───────────────┘  └──────────────────┘   │
 │                              │                               │
 │  ┌──────────────────────────┴───────────────────────────┐   │
 │  │                   Web Server (Axum)                   │   │

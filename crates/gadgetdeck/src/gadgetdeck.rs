@@ -362,26 +362,26 @@ impl GadgetDeck {
         self.plus_state.clone()
     }
     
-    /// Get the Neo-specific input state (touch point LEDs)
+    /// Get the Neo-specific input state (button LEDs)
     ///
     /// Returns `None` if not emulating a Stream Deck Neo.
-    /// Use this to control the touch point LED colors.
+    /// Use this to control the LED colors for buttons 8-9.
     ///
     /// # Example
     ///
     /// ```no_run
     /// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
-    /// use gadgetdeck::device::{NeoTouchPoint, RgbColor};
+    /// use gadgetdeck::device::{RgbColor, NEO_LED_BUTTON_LEFT, NEO_LED_BUTTON_RIGHT};
     ///
     /// let config = GadgetDeckConfig::neo("SERIAL123");
     /// let deck = GadgetDeck::new(config).unwrap();
     ///
     /// if let Some(neo) = deck.neo_state() {
-    ///     // Set left touch point LED to red
-    ///     neo.set_led_color(NeoTouchPoint::Left, RgbColor::red());
+    ///     // Set button 8 (left) LED to red
+    ///     neo.set_led_color(NEO_LED_BUTTON_LEFT, RgbColor::red());
     ///     
-    ///     // Set right touch point LED to custom color
-    ///     neo.set_led_color(NeoTouchPoint::Right, RgbColor::new(128, 64, 255));
+    ///     // Set button 9 (right) LED to custom color
+    ///     neo.set_led_color(NEO_LED_BUTTON_RIGHT, RgbColor::new(128, 64, 255));
     /// }
     /// ```
     pub fn neo_state(&self) -> Option<Arc<NeoInputState>> {

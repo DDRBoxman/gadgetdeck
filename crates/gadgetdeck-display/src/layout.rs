@@ -28,6 +28,16 @@ pub struct DeviceLayout {
     pub touchscreen_width: i32,
     /// Touchscreen height in pixels (100 for Plus)
     pub touchscreen_height: i32,
+    /// Whether this device has an info bar LCD (Neo only)
+    pub has_info_bar: bool,
+    /// Info bar width in pixels (248 for Neo)
+    pub info_bar_width: i32,
+    /// Info bar height in pixels (58 for Neo)
+    pub info_bar_height: i32,
+    /// Whether this device has LED buttons (Neo buttons 8-9)
+    pub has_led_buttons: bool,
+    /// Number of LED buttons (2 for Neo)
+    pub led_button_count: usize,
 }
 
 impl DeviceLayout {
@@ -47,14 +57,24 @@ impl DeviceLayout {
         let touchscreen_width = if is_plus { 800 } else { 0 };
         let touchscreen_height = if is_plus { 100 } else { 0 };
         
+        // Neo-specific features
+        let is_neo = matches!(model, StreamDeckModel::Neo);
+        let has_info_bar = is_neo;
+        let info_bar_width = if is_neo { 248 } else { 0 };
+        let info_bar_height = if is_neo { 58 } else { 0 };
+        let has_led_buttons = is_neo;
+        let led_button_count = if is_neo { 2 } else { 0 };
+        
         // Calculate optimal button size based on screen dimensions and grid
         // Leave some margin for spacing and status bar
         // For Plus, also reserve space for knobs below buttons and touchscreen at bottom
+        // For Neo, reserve space for info bar with LED buttons
         let knob_area_height = if has_knobs { 120 } else { 0 };  // Space for knob UI
         let touchscreen_area_height = if has_touchscreen { 120 } else { 0 };  // Space for touchscreen strip
+        let info_bar_area_height = if has_info_bar { 100 } else { 0 };  // Space for info bar + LED buttons
         
         let available_width = screen_width - 100;  // 50px margin on each side
-        let available_height = screen_height - 140 - knob_area_height - touchscreen_area_height; // 50px top, 40px status bar, 50px bottom
+        let available_height = screen_height - 140 - knob_area_height - touchscreen_area_height - info_bar_area_height; // 50px top, 40px status bar, 50px bottom
         
         // Calculate button size that fits the grid
         let max_button_width = (available_width - (cols as i32 - 1) * 30) / cols as i32;
@@ -77,6 +97,11 @@ impl DeviceLayout {
             has_touchscreen,
             touchscreen_width,
             touchscreen_height,
+            has_info_bar,
+            info_bar_width,
+            info_bar_height,
+            has_led_buttons,
+            led_button_count,
         }
     }
 }

@@ -11,5 +11,5 @@ pub mod plus;
 // Re-exports for convenience
 pub use buttons::ButtonState;
 pub use image::{ButtonImage, ImageStore, ImageStats, ImagePacket, ImagePacketHeader, ImageError, ImageEvent, ImageEventReceiver};
-pub use neo::{NeoInputState, NeoTouchPoint, RgbColor};
+pub use neo::{NeoInputState, RgbColor, NEO_LED_BUTTON_LEFT, NEO_LED_BUTTON_RIGHT};
 pub use plus::{PlusInputState, TouchEvent, TouchEventType, KnobEvent, KnobIndex, KnobDirection};

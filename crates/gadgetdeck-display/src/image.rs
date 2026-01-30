@@ -14,8 +14,8 @@ pub fn parse_image_to_raylib(image_data: &[u8], expected_size: i32, model: Strea
     }
     
     // Determine if this model needs 180° rotation
-    // Note: Plus does NOT need rotation unlike MK.2/XL
-    let needs_rotation = matches!(model, StreamDeckModel::Mk2 | StreamDeckModel::Xl);
+    // Note: Plus does NOT need rotation unlike MK.2/XL/Neo
+    let needs_rotation = matches!(model, StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo);
     
     // Detect image format by magic bytes
     if image_data[0] == b'B' && image_data[1] == b'M' {

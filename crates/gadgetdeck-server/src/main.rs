@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_store = deck.image_store();
     let image_rx = deck.subscribe_images();
     let plus_state = deck.plus_state();
+    let neo_state = deck.neo_state();
 
     // ========================================================================
     // Set up Web Server
@@ -70,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create broadcast channel for WebSocket updates
     let (ws_tx, _) = broadcast::channel::<WsMessage>(32);
     
-    // Create LCD store for Plus model
+    // Create LCD store for Plus/Neo models
     let lcd_store = LcdStore::new();
     
     let (key_cols, _key_rows) = model.key_matrix();
@@ -82,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         running: running.clone(),
         ws_tx: ws_tx.clone(),
         plus_state: plus_state.clone(),
+        neo_state: neo_state.clone(),
         lcd_store: lcd_store.clone(),
     };
 
@@ -159,6 +161,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/knobs/{id}/turn", post(handlers::turn_knob_handler))
         .route("/api/lcd/tap", post(handlers::lcd_tap_handler))
         .route("/api/lcd/swipe", post(handlers::lcd_swipe_handler))
+        // Neo-specific endpoints (button LEDs for buttons 8-9)
+        .route("/api/buttons/leds", get(handlers::button_leds_handler))
+        .route("/api/buttons/{id}/led", get(handlers::get_button_led_handler))
+        .route("/api/buttons/{id}/led", post(handlers::set_button_led_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 

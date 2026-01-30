@@ -1,10 +1,11 @@
 //! Main application state for gadgetdeck-display
 
-use gadgetdeck::{ButtonState, ImageEvent, KnobIndex, PlusInputState, StreamDeckModel};
+use gadgetdeck::{ButtonState, ImageEvent, KnobIndex, NeoInputState, PlusInputState, StreamDeckModel};
 use raylib::prelude::*;
 use std::sync::Arc;
 
 use crate::button::Button;
+use crate::infobar::{InfoBar, LedButton};
 use crate::knob::Knob;
 use crate::layout::DeviceLayout;
 use crate::touchscreen::{TouchGesture, TouchscreenStrip};
@@ -16,17 +17,25 @@ pub struct App {
     knobs: Vec<Knob>,
     /// Touchscreen strip for Stream Deck Plus
     touchscreen: Option<TouchscreenStrip>,
+    /// Info bar LCD for Stream Deck Neo
+    info_bar: Option<InfoBar>,
+    /// LED buttons for Stream Deck Neo (buttons 8-9)
+    led_buttons: Vec<LedButton>,
     touch_active: bool,
     touch_position: Vector2,
     last_pressed: Option<usize>,
     /// Last pressed knob index
     last_knob_pressed: Option<usize>,
+    /// Last pressed LED button index
+    last_led_button_pressed: Option<usize>,
     /// Index of knob currently being dragged for rotation
     dragging_knob: Option<usize>,
     /// USB button state (shared with USB thread)
     button_state: Arc<ButtonState>,
     /// Plus-specific input state (touchscreen/knobs)
     plus_state: Option<Arc<PlusInputState>>,
+    /// Neo-specific input state (LED buttons)
+    neo_state: Option<Arc<NeoInputState>>,
     /// Connection status message
     status_msg: String,
     /// Number of images received
@@ -45,6 +54,7 @@ impl App {
     pub fn new(
         button_state: Arc<ButtonState>,
         plus_state: Option<Arc<PlusInputState>>,
+        neo_state: Option<Arc<NeoInputState>>,
         model: StreamDeckModel,
         screen_width: i32,
         screen_height: i32,
@@ -54,17 +64,19 @@ impl App {
 
         // Calculate grid position to center buttons
         // For Plus, we offset buttons upward to make room for knobs and touchscreen
+        // For Neo, we offset buttons upward to make room for info bar and LED buttons
         let grid_width = (layout.cols as i32 * layout.button_size)
             + ((layout.cols as i32 - 1) * layout.button_spacing);
         let grid_height = (layout.rows as i32 * layout.button_size)
             + ((layout.rows as i32 - 1) * layout.button_spacing);
 
         let _extra_elements_height = if layout.has_knobs { 120 } else { 0 }
-            + if layout.has_touchscreen { 120 } else { 0 };
+            + if layout.has_touchscreen { 120 } else { 0 }
+            + if layout.has_info_bar { 100 } else { 0 };
 
         let start_x = (screen_width - grid_width) / 2;
-        let start_y = if layout.has_knobs || layout.has_touchscreen {
-            // For Plus: position buttons with more top margin
+        let start_y = if layout.has_knobs || layout.has_touchscreen || layout.has_info_bar {
+            // For Plus/Neo: position buttons with more top margin
             80 // Top margin
         } else {
             (screen_height - grid_height) / 2
@@ -137,17 +149,72 @@ impl App {
             Vec::new()
         };
 
+        // Create info bar and LED buttons for Neo
+        // Layout: [LED Button 8] [Info Bar LCD 248x58] [LED Button 9]
+        let (info_bar, led_buttons) = if layout.has_info_bar {
+            let info_bar_y = start_y + grid_height + 30; // Below buttons
+            
+            // Scale the info bar to fit nicely on screen
+            let scale_factor = 2.0; // Scale up the small 248x58 LCD
+            let info_bar_display_width = (layout.info_bar_width as f32 * scale_factor).min((screen_width - 200) as f32);
+            let info_bar_display_height = (layout.info_bar_height as f32 * scale_factor).min(120.0);
+            
+            // LED buttons are on either side of the info bar
+            let led_button_width = 60.0;
+            let led_button_height = info_bar_display_height;
+            let spacing = 15.0;
+            
+            // Total width = led_button + spacing + info_bar + spacing + led_button
+            let total_width = led_button_width * 2.0 + info_bar_display_width + spacing * 2.0;
+            let start_x_centered = (screen_width as f32 - total_width) / 2.0;
+            
+            // Left LED button (button 8)
+            let left_led = LedButton::new(
+                start_x_centered,
+                info_bar_y as f32,
+                led_button_width,
+                led_button_height,
+                8,
+            );
+            
+            // Info bar in the center
+            let info_bar_x = start_x_centered + led_button_width + spacing;
+            let info_bar = InfoBar::new(
+                info_bar_x,
+                info_bar_y as f32,
+                info_bar_display_width,
+                info_bar_display_height,
+            );
+            
+            // Right LED button (button 9)
+            let right_led = LedButton::new(
+                info_bar_x + info_bar_display_width + spacing,
+                info_bar_y as f32,
+                led_button_width,
+                led_button_height,
+                9,
+            );
+            
+            (Some(info_bar), vec![left_led, right_led])
+        } else {
+            (None, Vec::new())
+        };
+
         Self {
             buttons,
             knobs,
             touchscreen,
+            info_bar,
+            led_buttons,
             touch_active: false,
             touch_position: Vector2::new(0.0, 0.0),
             last_pressed: None,
             last_knob_pressed: None,
+            last_led_button_pressed: None,
             dragging_knob: None,
             button_state,
             plus_state,
+            neo_state,
             status_msg: "Waiting for host connection...".to_string(),
             images_received: 0,
             screen_width,
@@ -324,6 +391,35 @@ impl App {
                 }
             }
         }
+
+        // Update LED button states (for Neo)
+        let mut current_led_button_pressed = None;
+        for (i, led_button) in self.led_buttons.iter_mut().enumerate() {
+            let was_pressed = led_button.pressed;
+            led_button.pressed = self.touch_active
+                && led_button.contains(self.touch_position.x, self.touch_position.y);
+
+            if led_button.pressed {
+                current_led_button_pressed = Some(i);
+            }
+
+            // Update USB button state on changes (LED buttons are indices 8-9)
+            if led_button.pressed && !was_pressed {
+                self.button_state.press(led_button.index);
+                log::info!("LED button {} pressed (touch)", led_button.index);
+            } else if !led_button.pressed && was_pressed {
+                self.button_state.release(led_button.index);
+                log::info!("LED button {} released (touch)", led_button.index);
+            }
+
+            // Update LED color from neo_state if available
+            if let Some(ref neo) = self.neo_state {
+                if let Some(color) = neo.get_led_color(led_button.index) {
+                    led_button.set_led_color(color.r, color.g, color.b);
+                }
+            }
+        }
+        self.last_led_button_pressed = current_led_button_pressed;
     }
 
     /// Handle a detected touch gesture on the touchscreen strip
@@ -378,13 +474,24 @@ impl App {
                 self.images_received += 1;
                 self.status_msg = format!("Connected - {} images received", self.images_received);
 
-                // Update touchscreen strip image segment
+                // Update touchscreen strip image segment (Plus)
                 if let Some(ref mut strip) = self.touchscreen {
                     strip.update_image(rl, thread, image.as_bytes(), x_offset, y_offset, width, height);
                     log::info!(
                         "Updated touchscreen image: x_off={}, y_off={}, {}x{}, {} bytes",
                         x_offset,
                         y_offset,
+                        width,
+                        height,
+                        image.len()
+                    );
+                }
+                
+                // Update info bar LCD (Neo) - Neo receives full-screen updates (no offset)
+                if let Some(ref mut info_bar) = self.info_bar {
+                    info_bar.update_image(rl, thread, image.as_bytes());
+                    log::info!(
+                        "Updated info bar image: {}x{}, {} bytes",
                         width,
                         height,
                         image.len()
@@ -411,6 +518,14 @@ impl App {
         if let Some(ref strip) = self.touchscreen {
             strip.draw(d);
         }
+        
+        // Draw info bar and LED buttons (for Neo)
+        if let Some(ref info_bar) = self.info_bar {
+            info_bar.draw(d);
+        }
+        for led_button in &self.led_buttons {
+            led_button.draw(d);
+        }
 
         // Draw touch indicator (for debugging)
         if self.touch_active {
@@ -424,8 +539,11 @@ impl App {
         // Status message
         d.draw_text(&self.status_msg, 20, status_y + 10, 20, Color::LIGHTGRAY);
 
-        // Button/knob status on right
-        let button_status = if let Some(knob_idx) = self.last_knob_pressed {
+        // Button/knob/LED button status on right
+        let button_status = if let Some(led_idx) = self.last_led_button_pressed {
+            let label = if self.led_buttons[led_idx].index == 8 { "L" } else { "R" };
+            format!("LED Button {} active", label)
+        } else if let Some(knob_idx) = self.last_knob_pressed {
             let label = ["A", "B", "C", "D"].get(knob_idx).unwrap_or(&"?");
             format!("Knob {} active", label)
         } else if let Some(btn) = self.last_pressed {
