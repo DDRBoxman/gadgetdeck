@@ -501,12 +501,189 @@ Response: Version string at offset [5:]
 - [DeckSurf SDK](https://github.com/dend/decksurf-sdk) - C# library supporting Stream Deck Plus
 - [DeckSurf Docs](https://docs.deck.surf/) - Documentation for the SDK
 
+## Stream Deck Neo
+
+Sources:
+- [python-elgato-streamdeck](https://github.com/abcminiuser/python-elgato-streamdeck) StreamDeckNeo.py
+- [rust-elgato-streamdeck](https://github.com/OpenActionAPI/rust-elgato-streamdeck) - Rust library for Stream Deck
+
+### Device Overview
+
+| Property | Value |
+|----------|-------|
+| Vendor ID | 0x0fd9 |
+| Product ID | 0x009a |
+| KEY_COUNT | 8 |
+| KEY_COLS | 4 |
+| KEY_ROWS | 2 |
+| TOUCHPOINT_COUNT | 2 |
+| KEY_PIXEL_WIDTH | 96 |
+| KEY_PIXEL_HEIGHT | 96 |
+| KEY_IMAGE_FORMAT | JPEG |
+| KEY_FLIP | (True, True) |
+| KEY_ROTATION | 0° |
+| TOUCHSCREEN_PIXEL_WIDTH | 248 |
+| TOUCHSCREEN_PIXEL_HEIGHT | 58 |
+| TOUCHSCREEN_IMAGE_FORMAT | JPEG |
+| TOUCHSCREEN_FLIP | (False, False) |
+| TOUCHSCREEN_ROTATION | 180° |
+| DECK_VISUAL | True |
+| DECK_TOUCH | True |
+
+### Unique Features
+
+1. **8 LCD Buttons** - 96×96 pixel JPEG images (same as XL), keys need 180° rotation (flipped on both X and Y)
+2. **Info Bar Screen** - 248×58 pixel LCD touchscreen between buttons and touch points
+3. **2 Touch Points** - Left and Right touch-sensitive buttons below the info bar (no encoders/knobs)
+4. **LED Touch Points** - Touch points have controllable RGB LED strips
+
+### Packet Sizes
+
+| Constant | Value |
+|----------|-------|
+| _IMG_PACKET_LEN | 1024 bytes |
+| _KEY_PACKET_HEADER | 8 bytes |
+| _LCD_PACKET_HEADER | 8 bytes |
+| _KEY_PACKET_PAYLOAD_LEN | 1016 bytes (1024 - 8) |
+| _LCD_PACKET_PAYLOAD_LEN | 1016 bytes (1024 - 8) |
+
+### Button Image Protocol
+
+Images are JPEG-encoded, 96×96 pixels, rotated 180° (flipped on X and Y axes). Uses standard MK.2 packet format:
+
+```
+Header (8 bytes):
+[0x00] Report ID (0x02)
+[0x01] Command (0x07)
+[0x02] Button index (0x00-0x07)
+[0x03] Final chunk flag: 0x00 = more data, 0x01 = last packet
+[0x04-0x05] Payload length (u16 Little Endian)
+[0x06-0x07] Chunk index (u16 Little Endian, zero-based)
+
+Payload: Up to 1016 bytes of JPEG data
+```
+
+### Info Bar Screen Protocol
+
+The Neo's info bar screen uses a simpler protocol than the Plus. Full-screen writes only (no partial/region updates).
+
+**LCD Fill Command (0x0B)**
+
+```
+Header (8 bytes):
+[0x00] Report ID (0x02)
+[0x01] Command (0x0B)
+[0x02] Reserved (0x00)
+[0x03] Final chunk flag: 0x00 = more, 0x01 = last
+[0x04-0x05] Payload length (u16 Little Endian)
+[0x06-0x07] Chunk index (u16 Little Endian, zero-based)
+
+Payload: Up to 1016 bytes of JPEG data
+```
+
+Image requirements:
+- Size: 248×58 pixels
+- Format: JPEG
+- Rotation: 180° (upside down)
+- No mirroring needed
+
+### Button Input Report Format
+
+Uses standard Module 15/32 format:
+
+```
+[0x00] Report ID (0x01)
+[0x01] Command (0x00 for key press state change)
+[0x02-0x03] Payload data length (u16 LE) = number of keys
+[0x04+] Key states: 0x00 = released, 0x01 = pressed
+```
+
+Button states include both the 8 keys and 2 touch points (total 10 elements).
+- Keys: indices 0-7
+- Touch Points: indices 8-9 (left=8, right=9)
+
+### Touch Point Input
+
+Touch points are NOT encoders - they're simple buttons. Their state is reported together with the key states in the button input report.
+
+To distinguish:
+- `key_count` = 8 (actual LCD buttons)
+- `touchpoint_count` = 2 (touch-sensitive areas)
+- Button report contains states for all 10 (8 keys + 2 touch points)
+
+### Touch Point LED Control
+
+Each touch point has an RGB LED strip that can be controlled:
+
+**Set Touch Point Color (Report ID 0x03, Command 0x06)**
+
+```
+[0x00] Report ID (0x03)
+[0x01] Command (0x06)
+[0x02] Touch Point Index (key_count + point_index: 8 for left, 9 for right)
+[0x03] Red (0x00-0xFF)
+[0x04] Green (0x00-0xFF)
+[0x05] Blue (0x00-0xFF)
+```
+
+### Feature Reports
+
+Uses same format as Module 15/32:
+
+| Report ID | Direction | Size | Purpose |
+|-----------|-----------|------|---------|
+| 0x03 | SET | 32 bytes | Commands (reset, brightness, touch point color) |
+| 0x05 | GET | 32 bytes | Firmware version |
+| 0x06 | GET | 32 bytes | Serial number |
+
+#### Reset Command
+```
+Payload: [0x03, 0x02, 0x00, ...]  (32 bytes)
+```
+
+#### Set Brightness Command
+```
+Payload: [0x03, 0x08, brightness, 0x00, ...]  (32 bytes)
+brightness: 0x00 to 0x64 (0-100%)
+```
+
+#### Get Serial Number
+```
+Request: get_feature_report(0x06, 32)
+Response: [Report ID, Length, Serial String...]
+Serial at offset [2:]
+```
+
+#### Get Firmware Version
+```
+Request: get_feature_report(0x05, 32)
+Response: [Report ID, Length, Checksum(4), Version(8)]
+Version string at offset [6:]
+```
+
+### Key Differences from Stream Deck Plus
+
+| Feature | Stream Deck Neo | Stream Deck Plus |
+|---------|-----------------|------------------|
+| Product ID | 0x009a | 0x0084 |
+| Key count | 8 | 8 |
+| Key image size | 96×96 | 120×120 |
+| Key rotation | 180° (flip X+Y) | None |
+| Screen size | 248×58 | 800×100 |
+| Screen rotation | 180° | None |
+| Screen protocol | 0x0B (fill only) | 0x0C (region) |
+| Encoders/Knobs | 0 | 4 |
+| Touch points | 2 (simple buttons) | 0 |
+| Touch screen | Info bar only | Full 800×100 |
+| LED control | Touch point RGB | None |
+
 ## References
 
 - [Elgato Stream Deck Module 6 HID Docs](https://docs.elgato.com/streamdeck/hid/module-6) - Official documentation
 - [Elgato Stream Deck Module 15/32 HID Docs](https://docs.elgato.com/streamdeck/hid/module-15_32) - Official documentation
 - [Reverse Engineering The Stream Deck Plus](https://den.dev/blog/reverse-engineer-stream-deck-plus/) - Den Delimarsky's blog post
 - [python-elgato-streamdeck](https://github.com/abcminiuser/python-elgato-streamdeck) - Python library for Stream Deck
+- [rust-elgato-streamdeck](https://github.com/OpenActionAPI/rust-elgato-streamdeck) - Rust library for Stream Deck
 - [streamdeck-linux-gui](https://github.com/streamdeck-linux-gui/streamdeck-linux-gui) - Linux GUI for Stream Deck
 - [USB HID Specification](https://www.usb.org/hid)
 - [Linux USB Gadget Documentation](https://www.kernel.org/doc/html/latest/usb/gadget.html)
