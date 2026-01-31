@@ -59,44 +59,6 @@ struct GadgetDeckThreads {
     event_thread: JoinHandle<()>,
 }
 
-/// Configuration for creating a GadgetDeck instance
-pub struct GadgetDeckConfig {
-    /// The Stream Deck model to emulate
-    pub model: StreamDeckModel,
-    /// The device serial number
-    pub serial: String,
-}
-
-impl GadgetDeckConfig {
-    /// Create a new configuration with the given model and serial
-    pub fn new(model: StreamDeckModel, serial: impl Into<String>) -> Self {
-        Self {
-            model,
-            serial: serial.into(),
-        }
-    }
-
-    /// Create a configuration for Stream Deck Mini with the given serial
-    pub fn mini(serial: impl Into<String>) -> Self {
-        Self::new(StreamDeckModel::Mini, serial)
-    }
-
-    /// Create a configuration for Stream Deck Pedal with the given serial
-    pub fn pedal(serial: impl Into<String>) -> Self {
-        Self::new(StreamDeckModel::Pedal, serial)
-    }
-
-    /// Create a configuration for Stream Deck Plus with the given serial
-    pub fn plus(serial: impl Into<String>) -> Self {
-        Self::new(StreamDeckModel::Plus, serial)
-    }
-
-    /// Create a configuration for Stream Deck Neo with the given serial
-    pub fn neo(serial: impl Into<String>) -> Self {
-        Self::new(StreamDeckModel::Neo, serial)
-    }
-}
-
 /// Main struct for managing a USB gadget Stream Deck emulation
 ///
 /// This struct wraps up all the initialization, thread management, and
@@ -105,11 +67,10 @@ impl GadgetDeckConfig {
 /// # Example
 ///
 /// ```no_run
-/// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+/// use gadgetdeck::{GadgetDeck, StreamDeckModel};
 /// use std::sync::atomic::Ordering;
 ///
-/// let config = GadgetDeckConfig::new(StreamDeckModel::Mini, "ZZZZZZZZZZZZZZ");
-/// let mut deck = GadgetDeck::new(config).expect("Failed to create GadgetDeck");
+/// let mut deck = GadgetDeck::new(StreamDeckModel::Mini, "ZZZZZZZZZZZZZZ").expect("Failed to create GadgetDeck");
 ///
 /// // Start the USB gadget and processing threads
 /// deck.start().expect("Failed to start");
@@ -155,9 +116,8 @@ impl GadgetDeck {
     ///
     /// This sets up the USB gadget and prepares for starting, but does not
     /// start the processing threads yet. Call `start()` to begin operation.
-    pub fn new(config: GadgetDeckConfig) -> Result<Self, GadgetDeckError> {
-        let model = config.model;
-        let serial = config.serial;
+    pub fn new(model: StreamDeckModel, serial: impl Into<String>) -> Result<Self, GadgetDeckError> {
+        let serial = serial.into();
 
         log::info!("Creating GadgetDeck: model={:?}, serial={}", model, serial);
 
@@ -344,10 +304,9 @@ impl GadgetDeck {
     /// # Example
     ///
     /// ```no_run
-    /// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+    /// use gadgetdeck::{GadgetDeck, StreamDeckModel};
     ///
-    /// let config = GadgetDeckConfig::plus("SERIAL123");
-    /// let deck = GadgetDeck::new(config).unwrap();
+    /// let deck = GadgetDeck::new(StreamDeckModel::Plus, "SERIAL123").unwrap();
     ///
     /// if let Some(plus) = deck.plus_state() {
     ///     // Send a horizontal swipe from left to right
@@ -384,38 +343,3 @@ impl Drop for GadgetDeck {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_creation() {
-        let config = GadgetDeckConfig::new(StreamDeckModel::Mini, "TEST123");
-        assert_eq!(config.model, StreamDeckModel::Mini);
-        assert_eq!(config.serial, "TEST123");
-    }
-
-    #[test]
-    fn test_config_mini() {
-        let config = GadgetDeckConfig::mini("SERIAL");
-        assert_eq!(config.model, StreamDeckModel::Mini);
-    }
-
-    #[test]
-    fn test_config_pedal() {
-        let config = GadgetDeckConfig::pedal("SERIAL");
-        assert_eq!(config.model, StreamDeckModel::Pedal);
-    }
-
-    #[test]
-    fn test_config_plus() {
-        let config = GadgetDeckConfig::plus("SERIAL");
-        assert_eq!(config.model, StreamDeckModel::Plus);
-    }
-
-    #[test]
-    fn test_config_neo() {
-        let config = GadgetDeckConfig::neo("SERIAL");
-        assert_eq!(config.model, StreamDeckModel::Neo);
-    }
-}

@@ -15,12 +15,11 @@ GadgetDeck provides the core functionality for creating USB gadgets that appear 
 ## Quick Start
 
 ```rust
-use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+use gadgetdeck::{GadgetDeck, StreamDeckModel};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a Stream Deck Mini emulator
-    let config = GadgetDeckConfig::new(StreamDeckModel::Mini, "MYSERIAL123");
-    let mut deck = GadgetDeck::new(config)?;
+    let mut deck = GadgetDeck::new(StreamDeckModel::Mini, "MYSERIAL123")?;
     
     // Start USB processing threads
     deck.start()?;
@@ -65,11 +64,6 @@ use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
 // Create with specific model
 let config = GadgetDeckConfig::new(StreamDeckModel::Xl, "SERIAL");
 let mut deck = GadgetDeck::new(config)?;
-
-// Or use convenience constructors
-let config = GadgetDeckConfig::mini("SERIAL");
-let config = GadgetDeckConfig::plus("SERIAL");
-let config = GadgetDeckConfig::pedal("SERIAL");
 ```
 
 #### Methods

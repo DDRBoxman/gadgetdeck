@@ -37,7 +37,7 @@ mod layout;
 mod touchscreen;
 
 use clap::Parser;
-use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+use gadgetdeck::{GadgetDeck, StreamDeckModel};
 use std::sync::atomic::Ordering;
 
 use app::App;
@@ -78,9 +78,8 @@ fn main() {
 
     // Create and initialize the GadgetDeck
     println!("Setting up USB gadget...");
-    let config = GadgetDeckConfig::new(model, serial);
 
-    let mut deck = match GadgetDeck::new(config) {
+    let mut deck = match GadgetDeck::new(model, serial) {
         Ok(deck) => {
             println!("USB gadget created!");
             deck

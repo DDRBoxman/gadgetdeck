@@ -15,7 +15,7 @@ use axum::{
     routing::{get, post},
 };
 use clap::Parser;
-use gadgetdeck::{GadgetDeck, GadgetDeckConfig, ImageEvent, StreamDeckModel};
+use gadgetdeck::{GadgetDeck, ImageEvent, StreamDeckModel};
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use tokio::signal;
@@ -47,8 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🎛️  GadgetDeck Web Server");
     println!("   Setting up USB gadget...");
 
-    let config = GadgetDeckConfig::new(model, serial.clone());
-    let mut deck = GadgetDeck::new(config)?;
+    let mut deck = GadgetDeck::new(model, serial.clone())?;
 
     println!("   USB {} gadget registered!", model.product_name());
     println!("   Serial: {}", serial);

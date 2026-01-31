@@ -8,10 +8,9 @@
 //! The easiest way to use this library is through the [`GadgetDeck`] struct:
 //!
 //! ```no_run
-//! use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
+//! use gadgetdeck::{GadgetDeck, StreamDeckModel};
 //!
-//! let config = GadgetDeckConfig::new(StreamDeckModel::Mini, "ZZZZZZZZZZZZZZ");
-//! let mut deck = GadgetDeck::new(config).expect("Failed to create GadgetDeck");
+//! let mut deck = GadgetDeck::new(StreamDeckModel::Mini, "ZZZZZZZZZZZZZZ").expect("Failed to create GadgetDeck");
 //! deck.start().expect("Failed to start");
 //!
 //! // Access button state and image store through the deck
@@ -30,7 +29,7 @@ pub mod gadgetdeck;
 pub mod usb;
 
 // Re-export the main GadgetDeck struct and config at crate root
-pub use gadgetdeck::{GadgetDeck, GadgetDeckConfig, GadgetDeckError};
+pub use gadgetdeck::{GadgetDeck, GadgetDeckError};
 
 // Re-export commonly used types at crate root for convenience
 pub use device::{
