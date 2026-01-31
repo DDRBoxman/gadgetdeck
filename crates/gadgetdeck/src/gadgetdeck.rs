@@ -9,7 +9,7 @@ use std::thread::{self, JoinHandle};
 
 use usb_gadget::{Config, Gadget, RegGadget, default_udc};
 
-use crate::device::{ButtonState, ImageStore, NeoInputState, PlusInputState};
+use crate::device::{ButtonState, ImageStore, PlusInputState};
 use crate::usb::{
     CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver,
     run_plus_input_report_sender,
@@ -140,9 +140,7 @@ pub struct GadgetDeck {
     button_state: Arc<ButtonState>,
     /// Plus-specific input state (touchscreen/knobs) - only used for Plus model
     plus_state: Option<Arc<PlusInputState>>,
-    /// Neo-specific input state (touch point LEDs) - only used for Neo model
-    neo_state: Option<Arc<NeoInputState>>,
-    /// Image store shared with output thread
+    /// Image store shared with output thread (also stores Neo LED colors)
     image_store: ImageStore,
     /// The registered gadget (dropped to clean up)
     gadget_reg: Option<RegGadget>,
@@ -197,20 +195,12 @@ impl GadgetDeck {
             None
         };
 
-        // Create Neo-specific state if needed
-        let neo_state = if model == StreamDeckModel::Neo {
-            Some(NeoInputState::new())
-        } else {
-            None
-        };
-
         Ok(Self {
             model,
             serial,
             running,
             button_state,
             plus_state,
-            neo_state,
             image_store,
             gadget_reg: Some(gadget_reg),
             threads: None,
@@ -268,8 +258,11 @@ impl GadgetDeck {
 
         // Spawn USB control transfer event processing thread
         let running_event = self.running.clone();
+        let event_image_store = self.image_store.clone();
         let event_thread = thread::spawn(move || {
             log::info!("Starting USB event processing...");
+            // Set ImageStore for LED color handling via SET_REPORT
+            custom_hid.set_image_store(event_image_store);
             if let Err(e) = custom_hid.process(running_event.clone()) {
                 if running_event.load(Ordering::SeqCst) {
                     log::error!("USB event processing error: {}", e);
@@ -368,35 +361,10 @@ impl GadgetDeck {
         self.plus_state.clone()
     }
 
-    /// Get the Neo-specific input state (button LEDs)
-    ///
-    /// Returns `None` if not emulating a Stream Deck Neo.
-    /// Use this to control the LED colors for buttons 8-9.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use gadgetdeck::{GadgetDeck, GadgetDeckConfig, StreamDeckModel};
-    /// use gadgetdeck::device::{RgbColor, NEO_LED_BUTTON_LEFT, NEO_LED_BUTTON_RIGHT};
-    ///
-    /// let config = GadgetDeckConfig::neo("SERIAL123");
-    /// let deck = GadgetDeck::new(config).unwrap();
-    ///
-    /// if let Some(neo) = deck.neo_state() {
-    ///     // Set button 8 (left) LED to red
-    ///     neo.set_led_color(NEO_LED_BUTTON_LEFT, RgbColor::red());
-    ///     
-    ///     // Set button 9 (right) LED to custom color
-    ///     neo.set_led_color(NEO_LED_BUTTON_RIGHT, RgbColor::new(128, 64, 255));
-    /// }
-    /// ```
-    pub fn neo_state(&self) -> Option<Arc<NeoInputState>> {
-        self.neo_state.clone()
-    }
-
     /// Get the image store
     ///
-    /// Use this to access received button images.
+    /// Use this to access received button images and Neo LED colors.
+    /// Subscribe to events via `subscribe_images()` to get notified of updates.
     pub fn image_store(&self) -> ImageStore {
         self.image_store.clone()
     }
@@ -404,7 +372,7 @@ impl GadgetDeck {
     /// Subscribe to image update events
     ///
     /// Returns a receiver that will receive `ImageEvent` messages
-    /// whenever a button image is updated by the host.
+    /// whenever a button image is updated by the host, or LED colors change.
     pub fn subscribe_images(&self) -> crate::device::ImageEventReceiver {
         self.image_store.subscribe()
     }

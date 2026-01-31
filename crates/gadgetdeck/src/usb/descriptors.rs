@@ -142,15 +142,17 @@ impl StreamDeckModel {
                 // Report length is the max input report size (Report ID 1 = 7 bytes + 1 for report ID)
                 report_len: 8,
             },
-            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo => StreamDeckHidConfig {
-                protocol: 0,
-                sub_class: 0,
-                in_max_packet_size: 512,
-                out_max_packet_size: 1024,
-                interval: 1,
-                report_descriptor: Self::stream_deck_modern_report_descriptor(),
-                report_len: 32,
-            },
+            StreamDeckModel::Mk2 | StreamDeckModel::Xl | StreamDeckModel::Neo => {
+                StreamDeckHidConfig {
+                    protocol: 0,
+                    sub_class: 0,
+                    in_max_packet_size: 512,
+                    out_max_packet_size: 1024,
+                    interval: 1,
+                    report_descriptor: Self::stream_deck_modern_report_descriptor(),
+                    report_len: 32,
+                }
+            }
             StreamDeckModel::Plus => StreamDeckHidConfig {
                 protocol: 0,
                 sub_class: 0,
@@ -359,8 +361,7 @@ impl StreamDeckModel {
             //   Logical Minimum (0)
             0x15, 0x00, //   Logical Maximum (255)
             0x26, 0xFF, 0x00, //   Report Size (8)
-            0x75, 0x08,
-            //   Report ID 1 - Input (511 bytes) - Key/Knob/Touch state
+            0x75, 0x08, //   Report ID 1 - Input (511 bytes) - Key/Knob/Touch state
             0x96, 0xFF, 0x01, // Report Count (511)
             0x85, 0x01, // Report ID (1)
             0x09, 0x01, // Usage

@@ -1,8 +1,6 @@
 //! Main application state for gadgetdeck-display
 
-use gadgetdeck::{
-    ButtonState, ImageEvent, KnobIndex, NeoInputState, PlusInputState, StreamDeckModel,
-};
+use gadgetdeck::{ButtonState, ImageEvent, ImageStore, KnobIndex, PlusInputState, StreamDeckModel};
 use raylib::prelude::*;
 use std::sync::Arc;
 
@@ -36,8 +34,8 @@ pub struct App {
     button_state: Arc<ButtonState>,
     /// Plus-specific input state (touchscreen/knobs)
     plus_state: Option<Arc<PlusInputState>>,
-    /// Neo-specific input state (LED buttons)
-    neo_state: Option<Arc<NeoInputState>>,
+    /// Image store (also handles Neo LED colors)
+    image_store: ImageStore,
     /// Connection status message
     status_msg: String,
     /// Number of images received
@@ -56,7 +54,7 @@ impl App {
     pub fn new(
         button_state: Arc<ButtonState>,
         plus_state: Option<Arc<PlusInputState>>,
-        neo_state: Option<Arc<NeoInputState>>,
+        image_store: ImageStore,
         model: StreamDeckModel,
         screen_width: i32,
         screen_height: i32,
@@ -217,7 +215,7 @@ impl App {
             dragging_knob: None,
             button_state,
             plus_state,
-            neo_state,
+            image_store,
             status_msg: "Waiting for host connection...".to_string(),
             images_received: 0,
             screen_width,
@@ -415,11 +413,9 @@ impl App {
                 log::info!("LED button {} released (touch)", led_button.index);
             }
 
-            // Update LED color from neo_state if available
-            if let Some(ref neo) = self.neo_state {
-                if let Some(color) = neo.get_led_color(led_button.index) {
-                    led_button.set_led_color(color.r, color.g, color.b);
-                }
+            // Update LED color from image_store
+            if let Some(color) = self.image_store.get_led_color(led_button.index) {
+                led_button.set_led_color(color.r, color.g, color.b);
             }
         }
         self.last_led_button_pressed = current_led_button_pressed;
@@ -508,6 +504,16 @@ impl App {
                         image.len()
                     );
                 }
+            }
+            ImageEvent::LedColorUpdated { button, color } => {
+                // LED color updates are handled in update() by polling image_store
+                log::debug!(
+                    "LED color updated: button {} RGB({}, {}, {})",
+                    button,
+                    color.r,
+                    color.g,
+                    color.b
+                );
             }
         }
     }

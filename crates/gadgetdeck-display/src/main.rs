@@ -110,7 +110,7 @@ fn main() {
     // Get shared state
     let button_state = deck.button_state();
     let plus_state = deck.plus_state();
-    let neo_state = deck.neo_state();
+    let image_store = deck.image_store();
     let image_rx = deck.subscribe_images();
 
     // Initialize Raylib
@@ -131,7 +131,7 @@ fn main() {
     let mut app = App::new(
         button_state,
         plus_state,
-        neo_state,
+        image_store,
         model,
         args.width,
         args.height,

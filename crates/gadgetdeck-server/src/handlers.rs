@@ -236,7 +236,7 @@ pub async fn click_button_handler(
 // ============================================================================
 
 use crate::state::SetLedColorRequest;
-use gadgetdeck::{NeoInputState, RgbColor};
+use gadgetdeck::{ImageStore, RgbColor, StreamDeckModel};
 
 /// Get LED color for a button (Neo buttons 8-9 only)
 pub async fn get_button_led_handler(
@@ -247,22 +247,23 @@ pub async fn get_button_led_handler(
         return (StatusCode::NOT_FOUND, "Button not found").into_response();
     }
 
-    match &state.neo_state {
-        Some(neo) => match neo.get_led_color(id) {
-            Some(color) => Json(serde_json::json!({
-                "id": id,
-                "r": color.r,
-                "g": color.g,
-                "b": color.b
-            }))
+    if state.model != StreamDeckModel::Neo {
+        return (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response();
+    }
+
+    match state.image_store.get_led_color(id) {
+        Some(color) => Json(serde_json::json!({
+            "id": id,
+            "r": color.r,
+            "g": color.g,
+            "b": color.b
+        }))
+        .into_response(),
+        None => (
+            StatusCode::BAD_REQUEST,
+            format!("Button {} does not have an LED", id),
+        )
             .into_response(),
-            None => (
-                StatusCode::BAD_REQUEST,
-                format!("Button {} does not have an LED", id),
-            )
-                .into_response(),
-        },
-        None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
     }
 }
 
@@ -276,59 +277,57 @@ pub async fn set_button_led_handler(
         return (StatusCode::NOT_FOUND, "Button not found").into_response();
     }
 
-    match &state.neo_state {
-        Some(neo) => {
-            let color = RgbColor::new(req.r, req.g, req.b);
-            if neo.set_led_color(id, color) {
-                (
-                    StatusCode::OK,
-                    format!(
-                        "Button {} LED set to RGB({}, {}, {})",
-                        id, req.r, req.g, req.b
-                    ),
-                )
-                    .into_response()
-            } else {
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("Button {} does not have an LED", id),
-                )
-                    .into_response()
-            }
-        }
-        None => (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response(),
+    if state.model != StreamDeckModel::Neo {
+        return (StatusCode::BAD_REQUEST, "LEDs only available on Neo device").into_response();
+    }
+
+    let color = RgbColor::new(req.r, req.g, req.b);
+    if state.image_store.set_led_color(id, color) {
+        (
+            StatusCode::OK,
+            format!(
+                "Button {} LED set to RGB({}, {}, {})",
+                id, req.r, req.g, req.b
+            ),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Button {} does not have an LED", id),
+        )
+            .into_response()
     }
 }
 
 /// Get all buttons that have LEDs
 pub async fn button_leds_handler(State(state): State<AppState>) -> impl IntoResponse {
-    match &state.neo_state {
-        Some(neo) => {
-            let leds: Vec<_> = NeoInputState::led_buttons()
-                .iter()
-                .filter_map(|&id| {
-                    neo.get_led_color(id).map(|color| {
-                        serde_json::json!({
-                            "id": id,
-                            "r": color.r,
-                            "g": color.g,
-                            "b": color.b
-                        })
-                    })
-                })
-                .collect();
-            Json(serde_json::json!({
-                "available": true,
-                "leds": leds
-            }))
-            .into_response()
-        }
-        None => Json(serde_json::json!({
+    if state.model != StreamDeckModel::Neo {
+        return Json(serde_json::json!({
             "available": false,
             "leds": []
         }))
-        .into_response(),
+        .into_response();
     }
+
+    let leds: Vec<_> = ImageStore::led_buttons()
+        .iter()
+        .filter_map(|&id| {
+            state.image_store.get_led_color(id).map(|color| {
+                serde_json::json!({
+                    "id": id,
+                    "r": color.r,
+                    "g": color.g,
+                    "b": color.b
+                })
+            })
+        })
+        .collect();
+    Json(serde_json::json!({
+        "available": true,
+        "leds": leds
+    }))
+    .into_response()
 }
 
 // ============================================================================

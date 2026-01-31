@@ -52,6 +52,7 @@ pub struct CustomHid {
     serial: String,
     ep_in: Option<EndpointSender>,
     ep_out: Option<EndpointReceiver>,
+    image_store: Option<ImageStore>,
 }
 
 impl CustomHid {
@@ -106,6 +107,7 @@ impl CustomHid {
                 serial,
                 ep_in: Some(ep_in),
                 ep_out: Some(ep_out),
+                image_store: None,
             },
             handle,
         )
@@ -124,6 +126,11 @@ impl CustomHid {
     /// Get the model
     pub fn model(&self) -> StreamDeckModel {
         self.model
+    }
+
+    /// Set the ImageStore for LED color handling via SET_REPORT
+    pub fn set_image_store(&mut self, image_store: ImageStore) {
+        self.image_store = Some(image_store);
     }
 
     /// Process events from the USB host
@@ -209,7 +216,7 @@ impl CustomHid {
                         ctrl.length
                     );
 
-                    if Self::handle_set_request(receiver)? {
+                    if Self::handle_set_request(receiver, self.image_store.as_ref())? {
                         log::debug!("Request handled");
                     } else {
                         log::debug!("Request not handled, stalling");
@@ -313,7 +320,10 @@ impl CustomHid {
     }
 
     /// Handle SET requests (host to device)
-    fn handle_set_request(receiver: usb_gadget::function::custom::CtrlReceiver) -> Result<bool> {
+    fn handle_set_request(
+        receiver: usb_gadget::function::custom::CtrlReceiver,
+        image_store: Option<&ImageStore>,
+    ) -> Result<bool> {
         let ctrl = receiver.ctrl_req();
         let request_type = ctrl.request_type;
         let request = ctrl.request;
@@ -339,7 +349,24 @@ impl CustomHid {
                         .join(" ");
                     log::info!("SET_REPORT data[0..{}]: {}", display_len, hex_str);
 
-                    // TODO: Handle output reports (e.g., setting brightness, images)
+                    // Handle LED color commands (Report ID 0x03, Command 0x06)
+                    // Format: [0x03, 0x06, button_index, R, G, B]
+                    if report_id == 0x03 && data.len() >= 6 && data.get(1) == Some(&0x06) {
+                        if let Some(store) = image_store {
+                            if let Some((button, color)) = ImageStore::parse_led_color_report(&data)
+                            {
+                                log::info!(
+                                    "LED color command: button {} -> RGB({}, {}, {})",
+                                    button,
+                                    color.r,
+                                    color.g,
+                                    color.b
+                                );
+                                store.set_led_color(button, color);
+                            }
+                        }
+                    }
+
                     return Ok(true);
                 }
                 HID_REQ_SET_IDLE => {
@@ -720,6 +747,8 @@ pub fn run_output_report_receiver(
                                 }
                             }
                         }
+                        // Note: LED color commands (0x03) come via SET_REPORT feature reports,
+                        // not output reports. They are handled in handle_set_request().
                         _ => {
                             // Non-image output report
                         }

@@ -35,8 +35,7 @@ pub use gadgetdeck::{GadgetDeck, GadgetDeckConfig, GadgetDeckError};
 // Re-export commonly used types at crate root for convenience
 pub use device::{
     ButtonImage, ButtonState, ImageError, ImageEvent, ImageEventReceiver, ImagePacket,
-    ImagePacketHeader, ImageStats, ImageStore,
+    ImagePacketHeader, ImageStats, ImageStore, RgbColor,
 };
 pub use device::{KnobDirection, KnobEvent, KnobIndex, PlusInputState, TouchEvent, TouchEventType};
-pub use device::{NEO_LED_BUTTON_LEFT, NEO_LED_BUTTON_RIGHT, NeoInputState, RgbColor};
 pub use usb::{CustomHid, StreamDeckModel, run_input_report_sender, run_output_report_receiver};

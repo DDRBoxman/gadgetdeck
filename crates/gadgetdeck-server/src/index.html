@@ -417,6 +417,9 @@
                         } else {
                             updateLcdSegment(msg);
                         }
+                    } else if (msg.type === 'led') {
+                        // LED color update (Neo buttons 8-9)
+                        updateLedColor(msg.button_id, msg.r, msg.g, msg.b);
                     }
                 } catch (e) {
                     console.error('Failed to parse WebSocket message:', e);
@@ -741,6 +744,13 @@
                 }
             } catch (e) {
                 console.error('Failed to fetch button LEDs:', e);
+            }
+        }
+        
+        function updateLedColor(buttonId, r, g, b) {
+            const ledEl = document.getElementById(`button-led-${buttonId}`);
+            if (ledEl) {
+                ledEl.style.setProperty('--led-color', `rgb(${r}, ${g}, ${b})`);
             }
         }
         

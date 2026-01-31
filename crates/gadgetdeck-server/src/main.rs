@@ -63,7 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_store = deck.image_store();
     let image_rx = deck.subscribe_images();
     let plus_state = deck.plus_state();
-    let neo_state = deck.neo_state();
 
     // ========================================================================
     // Set up Web Server
@@ -84,7 +83,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         running: running.clone(),
         ws_tx: ws_tx.clone(),
         plus_state: plus_state.clone(),
-        neo_state: neo_state.clone(),
         lcd_store: lcd_store.clone(),
     };
 
@@ -143,6 +141,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         width,
                         height,
                         image_data,
+                    };
+                    let _ = watch_tx.send(update);
+                }
+                Ok(ImageEvent::LedColorUpdated { button, color }) => {
+                    // LED color updates for Neo buttons 8-9
+                    log::debug!(
+                        "LED color update: button {} RGB({}, {}, {})",
+                        button,
+                        color.r,
+                        color.g,
+                        color.b
+                    );
+                    let update = WsMessage::LedColorUpdate {
+                        button_id: button,
+                        r: color.r,
+                        g: color.g,
+                        b: color.b,
                     };
                     let _ = watch_tx.send(update);
                 }

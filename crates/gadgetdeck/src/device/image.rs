@@ -61,6 +61,21 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+/// RGB color for button LEDs (Neo buttons 8-9)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RgbColor {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl RgbColor {
+    /// Create a new RGB color
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
 /// Event emitted when an image is updated
 #[derive(Debug, Clone)]
 pub enum ImageEvent {
@@ -83,6 +98,13 @@ pub enum ImageEvent {
         height: u16,
         /// The completed image
         image: ButtonImage,
+    },
+    /// LED color was updated for a button (Neo buttons 8-9)
+    LedColorUpdated {
+        /// Button index (8 or 9 for Neo)
+        button: u8,
+        /// The new RGB color
+        color: RgbColor,
     },
 }
 
@@ -670,6 +692,8 @@ struct ImageStoreInner {
     images: HashMap<u8, ButtonImage>,
     /// In-progress image builders indexed by key (1-based)
     builders: HashMap<u8, ImageBuilder>,
+    /// LED colors for Neo buttons (indexed by button: 8 or 9)
+    led_colors: HashMap<u8, RgbColor>,
     /// Statistics
     stats: ImageStats,
     /// Subscribers for image events
@@ -696,6 +720,7 @@ impl ImageStore {
             inner: Arc::new(Mutex::new(ImageStoreInner {
                 images: HashMap::new(),
                 builders: HashMap::new(),
+                led_colors: HashMap::new(),
                 stats: ImageStats::default(),
                 subscribers: Vec::new(),
             })),
@@ -927,6 +952,78 @@ impl ImageStore {
         let mut inner = self.inner.lock().unwrap();
         inner.images.clear();
         inner.builders.clear();
+    }
+
+    /// Button indices that have LED capability on the Neo
+    pub const NEO_LED_BUTTON_LEFT: u8 = 8;
+    pub const NEO_LED_BUTTON_RIGHT: u8 = 9;
+
+    /// Check if a button has LED capability (Neo buttons 8-9)
+    pub fn has_led(button: u8) -> bool {
+        button == Self::NEO_LED_BUTTON_LEFT || button == Self::NEO_LED_BUTTON_RIGHT
+    }
+
+    /// Get all buttons that have LEDs
+    pub fn led_buttons() -> &'static [u8] {
+        &[Self::NEO_LED_BUTTON_LEFT, Self::NEO_LED_BUTTON_RIGHT]
+    }
+
+    /// Get the LED color for a button (returns None if button has no LED)
+    pub fn get_led_color(&self, button: u8) -> Option<RgbColor> {
+        if !Self::has_led(button) {
+            return None;
+        }
+        let inner = self.inner.lock().unwrap();
+        inner.led_colors.get(&button).copied()
+    }
+
+    /// Set the LED color for a button (returns false if button has no LED)
+    ///
+    /// This stores the color received from the host and notifies subscribers.
+    pub fn set_led_color(&self, button: u8, color: RgbColor) -> bool {
+        if !Self::has_led(button) {
+            return false;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        inner.led_colors.insert(button, color);
+        log::info!(
+            "Button {} LED color set to RGB({}, {}, {})",
+            button,
+            color.r,
+            color.g,
+            color.b
+        );
+        // Notify subscribers
+        let event = ImageEvent::LedColorUpdated { button, color };
+        inner
+            .subscribers
+            .retain(|tx| tx.send(event.clone()).is_ok());
+        true
+    }
+
+    /// Parse a SET_REPORT payload for button LED color (Report ID 0x03, Command 0x06)
+    /// received from the host. Returns the button index and RGB color if valid.
+    ///
+    /// Format per research:
+    /// [0] Report ID (0x03)
+    /// [1] Command (0x06)
+    /// [2] Button index (8 for left, 9 for right)
+    /// [3] Red (0x00-0xFF)
+    /// [4] Green (0x00-0xFF)
+    /// [5] Blue (0x00-0xFF)
+    pub fn parse_led_color_report(data: &[u8]) -> Option<(u8, RgbColor)> {
+        if data.len() < 6 {
+            return None;
+        }
+        if data[0] != 0x03 || data[1] != 0x06 {
+            return None;
+        }
+        let button = data[2];
+        if !Self::has_led(button) {
+            return None;
+        }
+        let color = RgbColor::new(data[3], data[4], data[5]);
+        Some((button, color))
     }
 }
 
