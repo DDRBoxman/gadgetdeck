@@ -342,7 +342,9 @@
                          id="button-led-8"
                          style="--led-color: #222"
                          onmousedown="pressButton(8)"
-                         onmouseup="releaseButton(8)"></div>
+                         onmouseup="releaseButton(8)"
+                         ontouchstart="handleTouchStart(event, 8)"
+                         ontouchend="handleTouchEnd(event, 8)"></div>
                 </div>
                 <div class="infobar" id="infobar">
                     <canvas id="infobar-canvas" width="248" height="58"></canvas>
@@ -352,7 +354,9 @@
                          id="button-led-9"
                          style="--led-color: #222"
                          onmousedown="pressButton(9)"
-                         onmouseup="releaseButton(9)"></div>
+                         onmouseup="releaseButton(9)"
+                         ontouchstart="handleTouchStart(event, 9)"
+                         ontouchend="handleTouchEnd(event, 9)"></div>
                 </div>
             </div>
         </div>
@@ -772,7 +776,9 @@
                 <div class="button-card" 
                      data-btn-id="${i}"
                      onmousedown="pressButton(${i})" 
-                     onmouseup="releaseButton(${i})">
+                     onmouseup="releaseButton(${i})"
+                     ontouchstart="handleTouchStart(event, ${i})"
+                     ontouchend="handleTouchEnd(event, ${i})">
                     <div class="button-image">
                         <img id="btn-img-${i}" 
                              src="${hasImage ? 'data:' + imageMimeType + ';base64,' + buttonImages[i] : ''}" 
@@ -805,8 +811,19 @@
             fetch(`/api/buttons/${id}/release`, { method: 'POST' });
         }
         
-        // Global mouseup to release button if mouse leaves window
-        document.addEventListener('mouseup', () => {
+        // Touch event handlers for iPad/mobile
+        function handleTouchStart(e, id) {
+            e.preventDefault(); // Prevent mouse event from also firing
+            pressButton(id);
+        }
+        
+        function handleTouchEnd(e, id) {
+            e.preventDefault(); // Prevent mouse event from also firing
+            releaseButton(id);
+        }
+        
+        // Global mouseup/touchend to release button if pointer leaves window
+        function releaseActiveButton() {
             if (activeButton !== null) {
                 const id = activeButton;
                 activeButton = null;
@@ -816,7 +833,11 @@
                 ledBtn?.classList.remove('pressed');
                 fetch(`/api/buttons/${id}/release`, { method: 'POST' });
             }
-        });
+        }
+        
+        document.addEventListener('mouseup', releaseActiveButton);
+        document.addEventListener('touchend', releaseActiveButton);
+        document.addEventListener('touchcancel', releaseActiveButton);
         
         // Initial setup - initialize LCD canvas immediately so it's ready for updates
         initLcdCanvas();
