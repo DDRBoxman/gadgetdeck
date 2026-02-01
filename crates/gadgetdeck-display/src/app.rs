@@ -227,16 +227,19 @@ impl App {
 
     pub fn update(&mut self, rl: &RaylibHandle) {
         // Handle touch input
-        // Raylib treats touch as mouse on Pi
+        // On DRM/Pi, raylib maps touch to mouse events
+        // Note: touch_count is unreliable (stays 1 after release), so use mouse_down
+        let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let touch_count = rl.get_touch_point_count();
 
-        if touch_count > 0 {
+        if mouse_down {
             self.touch_active = true;
-            self.touch_position = rl.get_touch_position(0);
-        } else if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-            // Fallback to mouse for testing on desktop
-            self.touch_active = true;
-            self.touch_position = rl.get_mouse_position();
+            // Prefer touch position if available, fall back to mouse
+            if touch_count > 0 {
+                self.touch_position = rl.get_touch_position(0);
+            } else {
+                self.touch_position = rl.get_mouse_position();
+            }
         } else {
             self.touch_active = false;
         }
