@@ -4,6 +4,8 @@
 
 Rust library and companion software to allow Raspberry Pi devices to show up as a Streamdeck over USB to another computer.
 
+https://github.com/user-attachments/assets/324c3d54-91d9-449a-9869-3c7f4a09c775
+
 <img width="1200" height="600" alt="gadgetdeck" src="https://github.com/user-attachments/assets/2c6b933d-8d07-4501-94e9-c33115f27fa0" />
 
 
