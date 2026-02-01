@@ -96,3 +96,11 @@ The device should show up on your display and respond to touch events.
 
 <img width="1600" height="600" alt="screenshot_drm" src="https://github.com/user-attachments/assets/00030d97-3fb8-49dd-8e2a-dc9e4fc5538f" />
 
+## Helpful Dev Tools
+
+**5V USB-C Dual Supply**
+
+Allows you to power a Raspberry PI with a USB C cable while splitting the data off into another cable to hook up to your dev computer.
+
+https://www.tindie.com/products/8086net/5v-usb-c-dual-supply-dual-ideal-diodes/
+
