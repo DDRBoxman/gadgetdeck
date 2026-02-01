@@ -44,6 +44,15 @@ use app::App;
 use cli::Args;
 
 fn main() {
+    // Set up panic hook to ensure clean exit on panic
+    // This is important because raylib can take over signal handling,
+    // making Ctrl+C unresponsive if the program panics
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("\n{}", panic_info);
+        eprintln!("\nFatal error occurred. Exiting...");
+        std::process::exit(1);
+    }));
+
     // Parse CLI arguments
     let args = Args::parse();
 
