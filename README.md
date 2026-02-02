@@ -96,6 +96,50 @@ The device should show up on your display and respond to touch events.
 
 <img width="1600" height="600" alt="screenshot_drm" src="https://github.com/user-attachments/assets/00030d97-3fb8-49dd-8e2a-dc9e4fc5538f" />
 
+### Pi with a super cheap tft touchscreen
+
+This was the one I grabbed: https://www.amazon.com/dp/B0DY5BVGNH
+
+```
+sudo apt install libgles2 libegl1 libgbm1 libdrm2
+
+sudo tee /etc/systemd/system/tft-symlink.service << 'EOF'
+[Unit]
+Description=Create TFT DRM symlink
+After=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'mkdir -p /dev/dri/by-path && for card in /dev/dri/card*; do if grep -q ili9486 /sys/class/drm/$(basename $card)/device/uevent 2>/dev/null; then ln -sf $card /dev/dri/by-path/platform-gpu-card; break; fi; done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart tft-symlink.service
+```
+
+```
+sudo vim /boot/firmware/config.txt
+```
+
+Add:
+```
+dtoverlay=dwc2
+dtoverlay=piscreen,drm,speed=32000000,invy
+```
+
+Reboot
+
+```
+sudo ./gadgetdeck-display -W 480 -H 320 -d mini
+```
+
+![IMG_0780](https://github.com/user-attachments/assets/45122883-70fd-4f34-896e-47e65ab688c7)
+
+
 ## Helpful Dev Tools
 
 **5V USB-C Dual Supply**
